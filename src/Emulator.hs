@@ -21,7 +21,7 @@ loadRom rom = loop 0 where
     | otherwise    = do
       let byte = BS.index rom i
       let addr = fromIntegral $ i
-      store (Ram addr) byte
+      store (Address addr) byte
       loop (i + 1)
 
 loadOpcode :: MonadEmulator m => m Opcode

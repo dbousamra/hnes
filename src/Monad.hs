@@ -19,7 +19,7 @@ import           Util
 class Monad m => MonadEmulator m where
   load8 :: Address -> m Word8
   load16 :: Address -> m Word16
-  -- readRegister :: Register -> m Word8
+  readRegister :: Register -> m Word8
   store :: Address -> Word8 -> m ()
   trace :: String -> m ()
 
@@ -29,10 +29,16 @@ newtype IOEmulator a = IOEmulator (ReaderT (Nes RealWorld)  IO a)
 instance MonadEmulator IOEmulator where
   load8 address = IOEmulator $ do
     mem <- ask
-    lift $ stToIO $ Nes.load mem address
+    lift $ stToIO $ Nes.readMemory mem address
+  load16 addr @ (Address a) = IOEmulator $ do
+    mem <- ask
+    lift $ stToIO $ do
+      l  <- Nes.readMemory mem addr
+      r <- Nes.readMemory mem (Address (a + 1))
+      pure $ makeW16 l r
   store address word = IOEmulator $ do
     mem <- ask
-    lift $ stToIO $ Nes.store mem address word
+    lift $ stToIO $ Nes.writeMemory mem address word
   trace msg = IOEmulator $ do
     mem <- ask
     r <- lift $ stToIO $ Nes.render mem
