@@ -1,12 +1,14 @@
+{-# LANGUAGE GADTs #-}
+
 module Nes (
   -- * Types
     Nes(..)
   , Address(..)
   -- * Functions
   , new
-  , readMemory
-  , writeMemory
-  , render
+  , load
+  , store
+  -- , render
 ) where
 
 import           Control.Monad.ST
@@ -19,63 +21,43 @@ import           Util
 
 data Nes s = Nes {
   memory :: VUM.MVector s Word8,
-  xReg   :: STRef       s Word8
+  pc     :: STRef       s Word16,
+  sp     :: STRef       s Word8
 }
 
-data Register
-  = Pc
-  | Sp
-  | P
-  | A
-  | X
-  | Y
-  deriving (Eq)
-
-instance Show Register where
-  show Pc = "Pc"
-  show Sp = "Sp"
-  show P  = "Status"
-  show A  = "A"
-  show X  = "X"
-  show Y  = "Y"
-
-data Address
-  = Address Word16
-  deriving (Eq)
-
-instance Show Address where
-  show (Address r) = "[" ++ prettifyWord16 r ++ "]"
-
-fromAddress :: Address -> Int
-fromAddress (Address a) =  fromIntegral a
-
-fromRegister :: Register -> (Nes s -> STRef s Word8)
-fromRegister reg = case reg of
-  X -> xReg
-  _ -> undefined
+-- GADTs are used to represent addressing
+data Address a where
+  Pc :: Address Word16
+  Sp :: Address Word8
+  P :: Address Word8
+  X :: Address Word8
+  Y :: Address Word8
+  Ram8 :: Word16 -> Address Word8
+  Ram16 :: Word16 -> Address Word16
 
 new :: ST s (Nes s)
 new = do
   mem <- VUM.replicate 65536 0
-  x <- newSTRef 0
-  pure $ Nes mem x
+  pc <- newSTRef 0
+  sp <- newSTRef 0xFD
+  pure $ Nes mem pc sp
 
-readMemory :: Nes s -> Address -> ST s Word8
-readMemory (Nes mem _) = VUM.read mem . fromAddress
+load :: Nes s -> Address a -> ST s a
+load nes Pc       = readSTRef (pc nes)
+load nes Sp       = readSTRef (sp nes)
+load nes (Ram8 r) = VUM.read (memory nes) $ fromIntegral r
+load nes (Ram16 r) = do
+  let idx = fromIntegral r
+  l <- VUM.read (memory nes) idx
+  h <- VUM.read (memory nes) (idx + 1)
+  pure $ makeW16 l h
 
-writeMemory :: Nes s -> Address -> Word8 -> ST s ()
-writeMemory (Nes mem _) = VUM.write mem . fromAddress
-
-setRegister :: Nes s -> Register -> Word8 -> ST s ()
-setRegister nes reg value = modifySTRef' (fromRegister reg nes) (const value)
-
-readRegister :: Nes s -> Register -> ST s Word8
-readRegister nes reg = readSTRef $ fromRegister reg nes
-
-render :: Nes s -> ST s String
-render mem = unlines <$> mapM line [(x * 8, x * 8 + 7) | x <- [0 .. 0xffff `div` 8]]
-  where
-    line (lo, up) = do
-      vs <- mapM (readMemory mem . Address) [lo .. up]
-      return $ prettifyWord16 lo ++ ": " ++ unwords (map show vs)
-
+store :: Nes s -> Address a -> a -> ST s ()
+store nes Pc v       = modifySTRef' (pc nes) (const v)
+store nes Sp v       = modifySTRef' (sp nes) (const v)
+store nes (Ram8 r) v = VUM.write (memory nes) (fromIntegral r) v
+store nes (Ram16 r) v = do
+  let idx = fromIntegral r
+  let (l, h) = splitW16 v
+  VUM.write (memory nes) idx l
+  VUM.write (memory nes) (idx + 1) h

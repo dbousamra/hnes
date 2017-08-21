@@ -5,10 +5,7 @@ import           Data.ByteString.Lazy   as BS hiding (putStrLn, replicate, zip)
 import           Data.Word
 import           Monad
 import           Nes                    (Address (..))
-
-data Opcode
-  = Opcode Word8
-  deriving (Show)
+import           Opcode
 
 readRom :: FilePath -> IO ByteString
 readRom = BS.readFile
@@ -21,38 +18,42 @@ loadRom rom = loop 0 where
     | otherwise    = do
       let byte = BS.index rom i
       let addr = fromIntegral $ i
-      store (Address addr) byte
+      store (Ram8 addr) byte
       loop (i + 1)
 
-loadOpcode :: MonadEmulator m => m Opcode
-loadOpcode = do
-  pure undefined
-  -- pc  <- load16 Pc
-  -- pcv <- load8 (Ram pc)
-  -- pure $ Opcode pcv
+loadNextOpcode :: MonadEmulator m => m Opcode
+loadNextOpcode = do
+  pc <- load Pc
+  pcv <- load (Ram8 pc)
+  pure $ decodeOpcode pcv
 
-executeOpcode :: (MonadIO m, MonadEmulator m) => Opcode -> m ()
-executeOpcode opcode = do
+execute :: (MonadIO m, MonadEmulator m) => Opcode -> m ()
+execute opcode = do
   liftIO $ putStrLn (show opcode)
-  -- pc <- load16 Pc
-  -- store16 Pc (pc + 1)
-  pure undefined
+  pure ()
+
+incrementPc :: MonadEmulator m => m ()
+incrementPc = do
+  pc <- load Pc
+  store Pc (pc + 1)
 
 emulate :: (MonadIO m, MonadEmulator m) => m ()
 emulate = do
-  opcode <- loadOpcode
-  executeOpcode opcode
-  liftIO $ putStrLn "In emulate"
-  emulate
+  opcode <- loadNextOpcode
+  incrementPc
+  execute opcode
+  -- emulate
 
 run :: FilePath -> IO ()
 run fp = runIOEmulator $ do
   rom <- liftIO $ readRom fp
   loadedRom <- loadRom rom
+  resetVector <- load $ Ram16 0xFFFC
+  store Pc resetVector
   emulate
 
 runExample :: IO ()
 runExample = run "roms/Example.nes"
 
-runDrMario :: IO ()
-runDrMario = run "roms/Dr_Mario.nes"
+run1942 :: IO ()
+run1942 = run "roms/1942.nes"
