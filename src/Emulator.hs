@@ -1,8 +1,9 @@
 module Emulator () where
 
 import           Control.Monad.IO.Class
-import           Data.ByteString.Lazy   as BS hiding (putStrLn, replicate, zip)
+import           Data.ByteString        as BS hiding (putStrLn, replicate, zip)
 import           Data.Word
+import           Mapper
 import           Monad
 import           Nes                    (Address (..))
 import           Opcode
@@ -10,7 +11,7 @@ import           Opcode
 readRom :: FilePath -> IO ByteString
 readRom = BS.readFile
 
-loadRom :: MonadEmulator m => ByteString -> m ()
+loadRom :: MonadEmulator m => BS.ByteString -> m ()
 loadRom rom = loop 0 where
   len = BS.length rom
   loop i
@@ -47,6 +48,7 @@ emulate = do
 run :: FilePath -> IO ()
 run fp = runIOEmulator $ do
   rom <- liftIO $ readRom fp
+  let mapper = parseMapper rom
   loadedRom <- loadRom rom
   resetVector <- load $ Ram16 0xFFFC
   store Pc resetVector
