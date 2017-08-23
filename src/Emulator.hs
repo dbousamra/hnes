@@ -48,7 +48,8 @@ emulate = do
 run :: FilePath -> IO ()
 run fp = runIOEmulator $ do
   rom <- liftIO $ readRom fp
-  let mapper = parseMapper rom
+  let header = parseINesFileHeader rom
+  liftIO $ putStrLn $ show header
   loadedRom <- loadRom rom
   resetVector <- load $ Ram16 0xFFFC
   store Pc resetVector
