@@ -9,6 +9,7 @@ module Opcode (
 ) where
 
 import           Data.Word
+import           Util
 
 data AddressMode
   = Implied
@@ -47,7 +48,13 @@ data Mnemonic
 
 data Opcode
   = Opcode Word8 Mnemonic AddressMode
-  deriving (Show)
+
+instance Show Opcode where
+  show (Opcode raw mn mode) =
+    "Opcode: "
+      ++ (prettifyWord8 raw) ++ " "
+      ++ (show mn) ++ " "
+      ++ (show mode)
 
 -- see https://github.com/blitzcode/neskell
 decodeOpcode :: Word8 -> Opcode

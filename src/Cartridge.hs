@@ -39,7 +39,6 @@ data Cartridge = Cartridge {
   sRam   :: BS.ByteString
 } deriving (Eq, Show)
 
-
 parseINesFileHeader :: BS.ByteString -> INesFileHeader
 parseINesFileHeader bs = INesFileHeader
   (fromIntegral $ BS.index bs 4)

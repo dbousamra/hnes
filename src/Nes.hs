@@ -12,6 +12,7 @@ module Nes (
 ) where
 
 import           Cartridge
+import           Constants
 import           Control.Monad.ST
 import           Data.Bits                   ((.&.))
 import qualified Data.ByteString             as BS
@@ -30,7 +31,7 @@ data Mapper s = Mapper {
 mapper0 :: Cartridge -> Mapper s
 mapper0 cart = Mapper cart readRom where
   readRom r
-    | addr < 0x2000 = BS.index (chrRom cart) addr
+    | addr <  0x2000 = BS.index (chrRom cart) addr
     | addr >= 0xC000 = BS.index (prgRom cart) ((prgBank2 * 0x4000) + (addr - 0xC000))
     | addr >= 0x8000 = BS.index (prgRom cart) ((prgBank1 * 0x4000) + (addr - 0x8000))
     | addr >= 0x6000 = BS.index (prgRom cart) (addr - 0x6000)
@@ -71,12 +72,12 @@ load :: Nes s -> Address a -> ST s a
 load nes Pc       = readSTRef (pc nes)
 load nes Sp       = readSTRef (sp nes)
 load nes (Ram8 r)
-  -- | r >= cpuRamBegin      || r <= cpuRamEnd = VUM.read (ram nes) addr
-  -- | r >= ramMirrorsBegin  || r <= ramMirrorsEnd = VUM.read (ram nes) (addr .&. 0x07FF)
-  -- | r >= ppuRegisterBegin || r <= ppuRegisterEnd = error "PPU read not implemented!"
-  -- | r >= ppuMirrorsBegin  || r <= ppuMirrorsEnd = error "PPU read not implemented!"
-  -- | r >= ioRegistersBegin || r <= ioRegistersEnd = error "IO read not implemented!"
-  | r >= cartSpaceBegin   || r <= cartSpaceEnd = pure $ readRom (mapper nes) r
+  | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.read (ram nes) addr
+  | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.read (ram nes) (addr .&. 0x07FF)
+  | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU read not implemented!"
+  | r >= ppuMirrorsBegin  && r <= ppuMirrorsEnd = error "PPU read not implemented!"
+  | r >= ioRegistersBegin && r <= ioRegistersEnd = error "IO read not implemented!"
+  | r >= cartSpaceBegin   && r <= cartSpaceEnd = pure $ readRom (mapper nes) r
   | otherwise = error "Erroneous read detected!"
   where addr = fromIntegral r
 load nes (Ram16 r) = do
@@ -94,40 +95,3 @@ store nes (Ram16 r) v = do
   let (l, h) = splitW16 v
   VUM.write (ram nes) idx l
   VUM.write (ram nes) (idx + 1) h
-
-cpuRamBegin :: Word16
-cpuRamBegin = 0x0000
-
-cpuRamEnd :: Word16
-cpuRamEnd = 0x07FF
-
-ramMirrorsBegin :: Word16
-ramMirrorsBegin = 0x0800
-
-ramMirrorsEnd :: Word16
-ramMirrorsEnd = 0x1FFF
-
-ppuRegisterBegin :: Word16
-ppuRegisterBegin = 0x2000
-
-ppuRegisterEnd :: Word16
-ppuRegisterEnd= 0x2007
-
-ppuMirrorsBegin :: Word16
-ppuMirrorsBegin = 0x2008
-
-ppuMirrorsEnd :: Word16
-ppuMirrorsEnd= 0x3FFF
-
-ioRegistersBegin :: Word16
-ioRegistersBegin = 0x4000
-
-ioRegistersEnd :: Word16
-ioRegistersEnd= 0x4017
-
-cartSpaceBegin :: Word16
-cartSpaceBegin = 0x4020
-
-cartSpaceEnd :: Word16
-cartSpaceEnd= 0xFFFF
-

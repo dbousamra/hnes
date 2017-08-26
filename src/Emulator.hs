@@ -10,22 +10,10 @@ import           Nes                    (Address (..))
 import           Opcode
 import           Util
 
+readBytes :: FilePath -> IO ByteString
+readBytes = BS.readFile
 
-readRom :: FilePath -> IO ByteString
-readRom = BS.readFile
-
-loadRom :: MonadEmulator m => BS.ByteString -> m ()
-loadRom rom = loop 0 where
-  len = BS.length rom
-  loop i
-    | i + 1 >= len = pure ()
-    | otherwise    = do
-      let byte = BS.index rom i
-      let addr = fromIntegral $ i
-      store (Ram8 addr) byte
-      loop (i + 1)
-
-loadNextOpcode :: MonadEmulator m => m Opcode
+loadNextOpcode :: (MonadIO m, MonadEmulator m) => m Opcode
 loadNextOpcode = do
   pc <- load Pc
   pcv <- load (Ram8 pc)
@@ -41,24 +29,21 @@ incrementPc = do
   pc <- load Pc
   store Pc (pc + 1)
 
-emulate :: (MonadIO m, MonadEmulator m) => m ()
-emulate = do
-  opcode <- loadNextOpcode
-  incrementPc
-  execute opcode
-  -- emulate
+emulate :: (MonadIO m, MonadEmulator m) => Int -> Int -> m ()
+emulate n max =
+  if n >= max then pure ()
+  else do
+    opcode <- loadNextOpcode
+    execute opcode
+    incrementPc
+    emulate (n + 1) max
 
 run :: FilePath -> IO ()
 run fp = do
-  rom <- readRom fp
-  let cart = parseCartridge rom
-  let prgBytes = take 10 (BS.unpack $ prgRom cart)
-  putStrLn $ show $ fmap prettifyWord8 prgBytes
+  cart <- parseCartridge <$> readBytes fp
   runIOEmulator cart $ do
-    -- store Pc 0xC000
-    x <- load $ Ram8 0xC000
-    liftIO $ putStrLn (show x)
-    emulate
+    store Pc 0xC000
+    emulate 0 10
 
 r :: IO ()
 r = run "roms/nestest.nes"
