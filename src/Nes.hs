@@ -42,12 +42,13 @@ mapper0 cart = Mapper cart readRom where
       prgBank1 = 0
       prgBank2 = prgBanks - 1
 
-
 data Nes s = Nes {
   ram    :: VUM.MVector s Word8,
-  mapper :: Mapper s,
+  mapper :: Mapper      s,
   pc     :: STRef       s Word16,
-  sp     :: STRef       s Word8
+  sp     :: STRef       s Word8,
+  x      :: STRef       s Word8,
+  y      :: STRef       s Word8
 }
 
 -- GADTs are used to represent addressing
@@ -63,14 +64,18 @@ data Address a where
 new :: Cartridge -> ST s (Nes s)
 new cart = do
   let mapper = mapper0 cart
-  mem <- VUM.replicate 65536 0
-  pc <- newSTRef 0
+  mem <- VUM.replicate 65536 0x0
+  pc <- newSTRef 0x0
   sp <- newSTRef 0xFD
-  pure $ Nes mem mapper pc sp
+  x <- newSTRef 0x0
+  y <- newSTRef 0x0
+  pure $ Nes mem mapper pc sp x y
 
 load :: Nes s -> Address a -> ST s a
 load nes Pc       = readSTRef (pc nes)
 load nes Sp       = readSTRef (sp nes)
+load nes X        = readSTRef (x nes)
+load nes Y        = readSTRef (y nes)
 load nes (Ram8 r)
   | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.read (ram nes) addr
   | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.read (ram nes) (addr .&. 0x07FF)
@@ -81,17 +86,27 @@ load nes (Ram8 r)
   | otherwise = error "Erroneous read detected!"
   where addr = fromIntegral r
 load nes (Ram16 r) = do
-  let idx = fromIntegral r
-  l <- VUM.read (ram nes) idx
-  h <- VUM.read (ram nes) (idx + 1)
+  let addr = fromIntegral r
+  l <- load nes (Ram8 addr)
+  h <- load nes (Ram8 $ addr + 1)
   pure $ makeW16 l h
 
 store :: Nes s -> Address a -> a -> ST s ()
-store nes Pc v       = modifySTRef' (pc nes) (const v)
-store nes Sp v       = modifySTRef' (sp nes) (const v)
-store nes (Ram8 r) v = VUM.write (ram nes) (fromIntegral r) v
+store nes Pc v = modifySTRef' (pc nes) (const v)
+store nes Sp v = modifySTRef' (sp nes) (const v)
+store nes X v  = modifySTRef' (x nes) (const v)
+store nes Y v  = modifySTRef' (y nes) (const v)
+store nes (Ram8 r) v
+  | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.write (ram nes) addr v
+  | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.write (ram nes) (addr `mod` 0x07FF) v
+  | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU write not implemented!"
+  | r >= ppuMirrorsBegin  && r <= ppuMirrorsEnd = error "PPU write not implemented!"
+  | r >= ioRegistersBegin && r <= ioRegistersEnd = error "IO write not implemented!"
+  | r >= cartSpaceBegin   && r <= cartSpaceEnd = error "Cannot write to cart space"
+  | otherwise = error "Erroneous write detected!"
+  where addr = (fromIntegral r)
 store nes (Ram16 r) v = do
-  let idx = fromIntegral r
+  let addr = fromIntegral r
   let (l, h) = splitW16 v
-  VUM.write (ram nes) idx l
-  VUM.write (ram nes) (idx + 1) h
+  store nes (Ram8 addr) l
+  store nes (Ram8 $ addr + 1) h

@@ -3,6 +3,7 @@ module Util (
     prettifyWord16
   , prettifyWord8
   , makeW16
+  , toWord16
   , splitW16
   , sliceBS
 ) where
@@ -20,6 +21,9 @@ prettifyWord8 = printf "0x%02x"
 
 makeW16 :: Word8 -> Word8 -> Word16
 makeW16 l h = (fromIntegral l :: Word16) .|. (fromIntegral h :: Word16) `shiftL` 8
+
+toWord16 :: Word8 -> Word16
+toWord16 = fromIntegral
 
 splitW16 :: Word16 -> (Word8, Word8)
 splitW16 w = (fromIntegral (w .&. 0xFF), fromIntegral (w `shiftR` 8))
