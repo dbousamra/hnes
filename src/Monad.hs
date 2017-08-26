@@ -7,6 +7,7 @@ module Monad (
   , runIOEmulator
 ) where
 
+import           Cartridge
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader   (ReaderT, ask, runReaderT)
 import           Control.Monad.ST       (RealWorld, stToIO)
@@ -35,7 +36,7 @@ instance MonadEmulator IOEmulator where
     mem <- ask
     liftIO $ print (msg <> " " <> "")
 
-runIOEmulator :: IOEmulator a -> IO a
-runIOEmulator (IOEmulator reader) = do
-  mem <- stToIO Nes.new
+runIOEmulator :: Cartridge -> IOEmulator a ->  IO a
+runIOEmulator cart (IOEmulator reader) = do
+  mem <- stToIO $ Nes.new cart
   runReaderT reader mem

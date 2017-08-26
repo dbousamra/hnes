@@ -1,7 +1,8 @@
-module Mapper (
+module Cartridge (
   -- * Types
+    Cartridge(..)
   -- * Functions
-    parseINesFileHeader
+  , parseCartridge
 ) where
 
 import           Data.Bits       (shiftL, unsafeShiftR, (.&.), (.|.))
@@ -10,7 +11,7 @@ import           Data.Word
 import           Util            (sliceBS)
 
 headerSize :: Int
-headerSize = 0xF
+headerSize = 0x10
 
 trainerSize :: Int
 trainerSize = 0x200
@@ -32,12 +33,12 @@ data INesFileHeader = INesFileHeader {
 
 data Cartridge = Cartridge {
   header :: INesFileHeader,
-  rawBs  :: BS.ByteString,
   mirror :: Int,
   chrRom :: BS.ByteString,
   prgRom :: BS.ByteString,
   sRam   :: BS.ByteString
 } deriving (Eq, Show)
+
 
 parseINesFileHeader :: BS.ByteString -> INesFileHeader
 parseINesFileHeader bs = INesFileHeader
@@ -48,9 +49,10 @@ parseINesFileHeader bs = INesFileHeader
   (fromIntegral $ BS.index bs 8)
   (fromIntegral $ BS.index bs 9)
 
-parseCartridge :: BS.ByteString -> INesFileHeader -> Cartridge
-parseCartridge bs header @ (INesFileHeader _ numPrg numChr control1 control2 _) =
-  let mapperType = (control2 .&. 0xF0) .|. (unsafeShiftR control1 4)
+parseCartridge :: BS.ByteString -> Cartridge
+parseCartridge bs =
+  let header @ (INesFileHeader _ numPrg numChr control1 control2 _) = parseINesFileHeader bs
+      mapperType = (control2 .&. 0xF0) .|. (unsafeShiftR control1 4)
       mirror     = (control1 .&. 1) .|. (shiftL ((unsafeShiftR control1 3) .&. 1) 1)
       prgOffset  = numPrg * prgRomSize
       chrOffset  = numChr * chrRomSize
@@ -59,4 +61,4 @@ parseCartridge bs header @ (INesFileHeader _ numPrg numChr control1 control2 _) 
                    else sliceBS (headerSize + prgOffset) (headerSize + prgOffset + chrOffset) bs
       sRam       = BS.replicate 0x2000 0
   in
-    Cartridge header bs mirror chrRom prgRom sRam
+    Cartridge header mirror chrRom prgRom sRam

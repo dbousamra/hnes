@@ -1,12 +1,15 @@
 module Emulator () where
 
+import           Cartridge
 import           Control.Monad.IO.Class
-import           Data.ByteString        as BS hiding (putStrLn, replicate, zip)
+import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
+                                               zip)
 import           Data.Word
-import           Mapper
 import           Monad
 import           Nes                    (Address (..))
 import           Opcode
+import           Util
+
 
 readRom :: FilePath -> IO ByteString
 readRom = BS.readFile
@@ -46,17 +49,19 @@ emulate = do
   -- emulate
 
 run :: FilePath -> IO ()
-run fp = runIOEmulator $ do
-  rom <- liftIO $ readRom fp
-  let header = parseINesFileHeader rom
-  liftIO $ putStrLn $ show header
-  loadedRom <- loadRom rom
-  resetVector <- load $ Ram16 0xFFFC
-  store Pc resetVector
-  emulate
+run fp = do
+  rom <- readRom fp
+  let cart = parseCartridge rom
+  let prgBytes = take 10 (BS.unpack $ prgRom cart)
+  putStrLn $ show $ fmap prettifyWord8 prgBytes
+  runIOEmulator cart $ do
+    -- store Pc 0xC000
+    x <- load $ Ram8 0xC000
+    liftIO $ putStrLn (show x)
+    emulate
 
-runExample :: IO ()
-runExample = run "roms/Example.nes"
+r :: IO ()
+r = run "roms/nestest.nes"
 
 run1942 :: IO ()
 run1942 = run "roms/1942.nes"
