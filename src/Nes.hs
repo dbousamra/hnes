@@ -87,9 +87,9 @@ load nes (Ram8 r)
   where addr = fromIntegral r
 load nes (Ram16 r) = do
   let addr = fromIntegral r
-  l <- load nes (Ram8 addr)
-  h <- load nes (Ram8 $ addr + 1)
-  pure $ makeW16 l h
+  lo <- load nes (Ram8 addr)
+  hi <- load nes (Ram8 $ addr + 1)
+  pure $ makeW16 lo hi
 
 store :: Nes s -> Address a -> a -> ST s ()
 store nes Pc v = modifySTRef' (pc nes) (const v)
@@ -107,6 +107,6 @@ store nes (Ram8 r) v
   where addr = (fromIntegral r)
 store nes (Ram16 r) v = do
   let addr = fromIntegral r
-  let (l, h) = splitW16 v
-  store nes (Ram8 addr) l
-  store nes (Ram8 $ addr + 1) h
+  let (lo, hi) = splitW16 v
+  store nes (Ram8 addr) lo
+  store nes (Ram8 $ addr + 1) hi

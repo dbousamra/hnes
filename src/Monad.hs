@@ -20,7 +20,6 @@ import           Util
 class Monad m => MonadEmulator m where
   load :: Address a -> m a
   store :: Address a -> a -> m ()
-  trace :: String -> m ()
 
 newtype IOEmulator a = IOEmulator (ReaderT (Nes RealWorld)  IO a)
   deriving (Functor, Applicative, Monad, MonadIO)
@@ -32,9 +31,6 @@ instance MonadEmulator IOEmulator where
   store address word = IOEmulator $ do
     mem <- ask
     lift $ stToIO $ Nes.store mem address word
-  trace msg = IOEmulator $ do
-    mem <- ask
-    liftIO $ print (msg <> " " <> "")
 
 runIOEmulator :: Cartridge -> IOEmulator a ->  IO a
 runIOEmulator cart (IOEmulator reader) = do

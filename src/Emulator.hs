@@ -2,6 +2,7 @@ module Emulator () where
 
 import           Cartridge
 import           Control.Monad.IO.Class
+import           Data.Bits              ((.|.))
 import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
                                                zip)
 import           Data.Word
@@ -51,34 +52,75 @@ addressForMode Immediate = do
   pure $ pcv + 1
 addressForMode ZeroPage = do
   pcv <- load Pc
-  v <- load $ Ram8(pcv + 1)
+  v <- load $ Ram8 (pcv + 1)
   pure $ toWord16 v
 addressForMode mode = error $ "Unimplemented AddressMode " ++ (show mode)
 
+pcIncrementForOpcode :: Opcode -> Word16
+pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
+  (_, JMP)             -> 0
+  (_, JSR)             -> 0
+  (_, RTS)             -> 0
+  (_, RTI)             -> 0
+  (Indirect, _)        -> 0
+  (Relative, _)        -> 0
+  (Accumulator, _)     -> 1
+  (Implied, _)         -> 1
+  (Immediate, _)       -> 2
+  (IndexedIndirect, _) -> 2
+  (IndirectIndexed, _) -> 2
+  (ZeroPage, _)        -> 2
+  (ZeroPageX, _)       -> 2
+  (ZeroPageY, _)       -> 2
+  (Absolute, _)        -> 3
+  (AbsoluteX, _)       -> 3
+  (AbsoluteY, _)       -> 3
+
 execute :: (MonadIO m, MonadEmulator m) => Opcode -> m ()
 execute op @ (Opcode _ mn mode) = do
-  pc <- load Pc
-  liftIO $ putStrLn $ "PC: " ++ (prettifyWord16 pc) ++ " " ++ (show op)
+  pcv <- load Pc
+  spv <- load Sp
+  liftIO $ putStrLn $ "PC: " ++ (prettifyWord16 pcv) ++ " " ++ (show op) ++ " SP: " ++ (prettifyWord8 spv)
   addr <- addressForMode mode
   go addr
+  incrementPc $ pcIncrementForOpcode op
   where
     go = case mn of
       JMP   -> jmp
+      JSR   -> jsr
       LDX   -> ldx
       STX   -> stx
       other -> error $ "Unimplemented opcode: " ++ (show other)
 
--- Jump - Move execution to a particular address
+push :: MonadEmulator m => Word8 -> m ()
+push v = do
+  spv <- load Sp
+  store (Ram8 $ 0x100 .|. (toWord16 spv)) v
+  store Sp (spv - 1)
+
+push16 :: MonadEmulator m => Word16 -> m ()
+push16 v = do
+  let (lo, hi) = splitW16 v
+  push hi
+  push lo
+
+-- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
 jmp = store Pc
+
+-- JSR - Jump to subroutine
+jsr :: MonadEmulator m => Word16 -> m ()
+jsr addr = do
+  pcv <- load Pc
+  push16 $ pcv - 1
+  store Pc addr
 
 -- LDX - Load X Register
 ldx :: MonadEmulator m => Word16 -> m ()
 ldx addr = do
   v <- load $ Ram8 addr
   store X v
-  incrementPc 2
-  -- set ZN flag
+  -- TODO: set ZN flag
 
 -- STX - Store X Register
 stx :: MonadEmulator m => Word16 -> m ()
@@ -87,20 +129,14 @@ stx addr = do
   store (Ram8 addr) xv
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+renderEmulator :: MonadEmulator m => m String
+renderEmulator = do
+  pcv <- load Pc
+  spv <- load Sp
+  xv  <- load X
+  yv  <- load Y
+  pure $ "PC: " ++ (prettifyWord16 pcv) ++ " " ++
+         "SP: " ++ (prettifyWord8 spv) ++ " " ++
+         "X: " ++ (prettifyWord8 xv) ++ " " ++
+         "Y: " ++ (prettifyWord8 xv) ++ " "
 
