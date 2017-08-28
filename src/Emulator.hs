@@ -2,12 +2,12 @@ module Emulator () where
 
 import           Cartridge
 import           Control.Monad.IO.Class
-import           Data.Bits              ((.|.))
+import           Data.Bits              (setBit, (.|.))
 import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
                                                zip)
 import           Data.Word
 import           Monad
-import           Nes                    (Address (..))
+import           Nes                    (Address (..), Flag (..))
 import           Opcode
 import           Util
 
@@ -50,6 +50,8 @@ addressForMode Absolute = do
 addressForMode Immediate = do
   pcv <- load Pc
   pure $ pcv + 1
+addressForMode Implied =
+  pure $ toWord16 0
 addressForMode ZeroPage = do
   pcv <- load Pc
   v <- load $ Ram8 (pcv + 1)
@@ -86,9 +88,12 @@ execute op @ (Opcode _ mn mode) = do
   incrementPc $ pcIncrementForOpcode op
   where
     go = case mn of
+      BCS   -> bcs
       JMP   -> jmp
       JSR   -> jsr
       LDX   -> ldx
+      NOP   -> nop
+      SEC   -> sec
       STX   -> stx
       other -> error $ "Unimplemented opcode: " ++ (show other)
 
@@ -103,6 +108,9 @@ push16 v = do
   let (lo, hi) = splitW16 v
   push hi
   push lo
+
+bcs :: MonadEmulator m => Word16 -> m ()
+bcs addr = pure ()
 
 -- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
@@ -120,14 +128,21 @@ ldx :: MonadEmulator m => Word16 -> m ()
 ldx addr = do
   v <- load $ Ram8 addr
   store X v
+  store (P FZ) True
+  store (P FN) True
   -- TODO: set ZN flag
+
+nop :: MonadEmulator m => Word16 -> m ()
+nop addr = pure ()
+
+sec :: MonadEmulator m => Word16 -> m ()
+sec addr = store (P FC) True
 
 -- STX - Store X Register
 stx :: MonadEmulator m => Word16 -> m ()
 stx addr = do
   xv <- load X
   store (Ram8 addr) xv
-
 
 renderEmulator :: MonadEmulator m => m String
 renderEmulator = do

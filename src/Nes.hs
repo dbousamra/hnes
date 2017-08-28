@@ -4,6 +4,7 @@ module Nes (
   -- * Types
     Nes(..)
   , Address(..)
+  , Flag(..)
   -- * Functions
   , new
   , load
@@ -14,7 +15,7 @@ module Nes (
 import           Cartridge
 import           Constants
 import           Control.Monad.ST
-import           Data.Bits                   ((.&.))
+import           Data.Bits                   (setBit, testBit, (.&.))
 import qualified Data.ByteString             as BS
 import           Data.STRef                  (STRef, modifySTRef', newSTRef,
                                               readSTRef)
@@ -28,25 +29,12 @@ data Mapper s = Mapper {
   readRom :: Word16 -> Word8
 }
 
-mapper0 :: Cartridge -> Mapper s
-mapper0 cart = Mapper cart readRom where
-  readRom r
-    | addr <  0x2000 = BS.index (chrRom cart) addr
-    | addr >= 0xC000 = BS.index (prgRom cart) ((prgBank2 * 0x4000) + (addr - 0xC000))
-    | addr >= 0x8000 = BS.index (prgRom cart) ((prgBank1 * 0x4000) + (addr - 0x8000))
-    | addr >= 0x6000 = BS.index (prgRom cart) (addr - 0x6000)
-    | otherwise = error $ "Erroneous mapper0 read detected!: " ++ prettifyWord16 r
-    where
-      addr = fromIntegral r
-      prgBanks = (BS.length (prgRom cart)) `div` 0x4000
-      prgBank1 = 0
-      prgBank2 = prgBanks - 1
-
 data Nes s = Nes {
   ram    :: VUM.MVector s Word8,
   mapper :: Mapper      s,
   pc     :: STRef       s Word16,
   sp     :: STRef       s Word8,
+  p      :: STRef       s Word8,
   x      :: STRef       s Word8,
   y      :: STRef       s Word8
 }
@@ -55,11 +43,22 @@ data Nes s = Nes {
 data Address a where
   Pc    :: Address Word16
   Sp    :: Address Word8
-  P     :: Address Word8
+  P     :: Flag -> Address Bool
   X     :: Address Word8
   Y     :: Address Word8
   Ram8  :: Word16 -> Address Word8
   Ram16 :: Word16 -> Address Word16
+
+data Flag
+  = FN
+  | FV
+  | F1
+  | FB
+  | FD
+  | FI
+  | FZ
+  | FC
+  deriving (Enum)
 
 new :: Cartridge -> ST s (Nes s)
 new cart = do
@@ -67,15 +66,19 @@ new cart = do
   mem <- VUM.replicate 65536 0x0
   pc <- newSTRef 0x0
   sp <- newSTRef 0xFD
+  p <- newSTRef 0x34
   x <- newSTRef 0x0
   y <- newSTRef 0x0
-  pure $ Nes mem mapper pc sp x y
+  pure $ Nes mem mapper pc sp p x y
 
 load :: Nes s -> Address a -> ST s a
 load nes Pc       = readSTRef (pc nes)
 load nes Sp       = readSTRef (sp nes)
 load nes X        = readSTRef (x nes)
 load nes Y        = readSTRef (y nes)
+load nes (P flag) = do
+  v <- readSTRef (p nes)
+  pure $ testBit v (7 - fromEnum flag)
 load nes (Ram8 r)
   | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.read (ram nes) addr
   | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.read (ram nes) (addr .&. 0x07FF)
@@ -96,6 +99,9 @@ store nes Pc v = modifySTRef' (pc nes) (const v)
 store nes Sp v = modifySTRef' (sp nes) (const v)
 store nes X v  = modifySTRef' (x nes) (const v)
 store nes Y v  = modifySTRef' (y nes) (const v)
+store nes (P flag) b = do
+  v <- readSTRef (p nes)
+  modifySTRef' (p nes) (const $ setBit v (7 - fromEnum flag))
 store nes (Ram8 r) v
   | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.write (ram nes) addr v
   | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.write (ram nes) (addr `mod` 0x07FF) v
@@ -110,3 +116,18 @@ store nes (Ram16 r) v = do
   let (lo, hi) = splitW16 v
   store nes (Ram8 addr) lo
   store nes (Ram8 $ addr + 1) hi
+
+mapper0 :: Cartridge -> Mapper s
+mapper0 cart = Mapper cart readRom where
+  readRom r
+    | addr <  0x2000 = BS.index (chrRom cart) addr
+    | addr >= 0xC000 = BS.index (prgRom cart) ((prgBank2 * 0x4000) + (addr - 0xC000))
+    | addr >= 0x8000 = BS.index (prgRom cart) ((prgBank1 * 0x4000) + (addr - 0x8000))
+    | addr >= 0x6000 = BS.index (prgRom cart) (addr - 0x6000)
+    | otherwise = error $ "Erroneous mapper0 read detected!: " ++ prettifyWord16 r
+    where
+      addr = fromIntegral r
+      prgBanks = (BS.length (prgRom cart)) `div` 0x4000
+      prgBank1 = 0
+      prgBank2 = prgBanks - 1
+
