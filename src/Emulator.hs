@@ -16,7 +16,7 @@ run fp = do
   cart <- parseCartridge <$> readBytes fp
   runIOEmulator cart $ do
     store Pc 0xC000
-    emulate 0 10
+    emulate 0 100
 
 r :: IO ()
 r = run "roms/nestest.nes"
@@ -53,6 +53,13 @@ addressForMode mode = case mode of
     pure $ pcv + 1
   Implied ->
     pure $ toWord16 0
+  Relative -> do
+    pcv <- load Pc
+    offset <- load $ Ram16 (pcv + 1)
+    if offset < 0x80 then
+      pure $ pcv + 2 + offset
+    else
+      pure $ pcv + 2 + offset - 0x100
   ZeroPage -> do
     pcv <- load Pc
     v <- load $ Ram8 (pcv + 1)
@@ -111,7 +118,12 @@ push16 v = do
   push lo
 
 bcs :: MonadEmulator m => Word16 -> m ()
-bcs addr = pure ()
+bcs addr = do
+  c <- load $ P FC
+  if c then
+    store Pc addr
+  else
+    pure ()
 
 -- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
