@@ -44,19 +44,20 @@ incrementPc n = do
   store Pc (pc + n)
 
 addressForMode :: (MonadIO m, MonadEmulator m) => AddressMode -> m Word16
-addressForMode Absolute = do
-  pcv <- load Pc
-  load $ Ram16 (pcv + 1)
-addressForMode Immediate = do
-  pcv <- load Pc
-  pure $ pcv + 1
-addressForMode Implied =
-  pure $ toWord16 0
-addressForMode ZeroPage = do
-  pcv <- load Pc
-  v <- load $ Ram8 (pcv + 1)
-  pure $ toWord16 v
-addressForMode mode = error $ "Unimplemented AddressMode " ++ (show mode)
+addressForMode mode = case mode of
+  Absolute -> do
+    pcv <- load Pc
+    load $ Ram16 (pcv + 1)
+  Immediate -> do
+    pcv <- load Pc
+    pure $ pcv + 1
+  Implied ->
+    pure $ toWord16 0
+  ZeroPage -> do
+    pcv <- load Pc
+    v <- load $ Ram8 (pcv + 1)
+    pure $ toWord16 v
+  other -> error $ "Unimplemented AddressMode " ++ (show other)
 
 pcIncrementForOpcode :: Opcode -> Word16
 pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
