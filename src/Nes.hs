@@ -9,7 +9,6 @@ module Nes (
   , new
   , load
   , store
-  -- , render
 ) where
 
 import           Cartridge
@@ -72,14 +71,34 @@ new cart = do
   pure $ Nes mem mapper pc sp p x y
 
 load :: Nes s -> Address a -> ST s a
-load nes Pc       = readSTRef (pc nes)
-load nes Sp       = readSTRef (sp nes)
-load nes X        = readSTRef (x nes)
-load nes Y        = readSTRef (y nes)
-load nes (P flag) = do
+load nes addr = case addr of
+  Pc        -> loadPc nes
+  Sp        -> loadSp nes
+  X         -> loadX nes
+  Y         -> loadY nes
+  (P flag)  -> loadP nes flag
+  (Ram8 r)  -> loadRam8 nes r
+  (Ram16 r) -> loadRam16 nes r
+
+loadPc :: Nes s -> ST s Word16
+loadPc nes = readSTRef (pc nes)
+
+loadSp :: Nes s -> ST s Word8
+loadSp nes = readSTRef (sp nes)
+
+loadX :: Nes s -> ST s Word8
+loadX nes = readSTRef (x nes)
+
+loadY :: Nes s -> ST s Word8
+loadY nes = readSTRef (y nes)
+
+loadP :: Nes s -> Flag -> ST s Bool
+loadP nes flag = do
   v <- readSTRef (p nes)
   pure $ testBit v (7 - fromEnum flag)
-load nes (Ram8 r)
+
+loadRam8 :: Nes s -> Word16 -> ST s Word8
+loadRam8 nes r
   | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.read (ram nes) addr
   | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.read (ram nes) (addr .&. 0x07FF)
   | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU read not implemented!"
@@ -88,21 +107,43 @@ load nes (Ram8 r)
   | r >= cartSpaceBegin   && r <= cartSpaceEnd = pure $ readRom (mapper nes) r
   | otherwise = error "Erroneous read detected!"
   where addr = fromIntegral r
-load nes (Ram16 r) = do
+
+loadRam16 :: Nes s -> Word16 -> ST s Word16
+loadRam16 nes r = do
   let addr = fromIntegral r
   lo <- load nes (Ram8 addr)
   hi <- load nes (Ram8 $ addr + 1)
   pure $ makeW16 lo hi
 
 store :: Nes s -> Address a -> a -> ST s ()
-store nes Pc v = modifySTRef' (pc nes) (const v)
-store nes Sp v = modifySTRef' (sp nes) (const v)
-store nes X v  = modifySTRef' (x nes) (const v)
-store nes Y v  = modifySTRef' (y nes) (const v)
-store nes (P flag) b = do
+store nes addr v = case addr of
+  Pc        -> storePc nes v
+  Sp        -> storeSp nes v
+  X         -> storeX nes v
+  Y         -> storeY nes v
+  (P flag)  -> storeP nes flag v
+  (Ram8 r)  -> storeRam8 nes r v
+  (Ram16 r) -> storeRam16 nes r v
+
+storePc :: Nes s -> Word16 -> ST s ()
+storePc nes v = modifySTRef' (pc nes) (const v)
+
+storeSp :: Nes s -> Word8 -> ST s ()
+storeSp nes v = modifySTRef' (sp nes) (const v)
+
+storeX :: Nes s -> Word8 -> ST s ()
+storeX nes v  = modifySTRef' (x nes) (const v)
+
+storeY :: Nes s -> Word8 -> ST s ()
+storeY nes v  = modifySTRef' (y nes) (const v)
+
+storeP :: Nes s -> Flag -> Bool -> ST s ()
+storeP nes flag b = do
   v <- readSTRef (p nes)
   modifySTRef' (p nes) (const $ setBit v (7 - fromEnum flag))
-store nes (Ram8 r) v
+
+storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
+storeRam8 nes r v
   | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.write (ram nes) addr v
   | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.write (ram nes) (addr `mod` 0x07FF) v
   | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU write not implemented!"
@@ -111,7 +152,9 @@ store nes (Ram8 r) v
   | r >= cartSpaceBegin   && r <= cartSpaceEnd = error "Cannot write to cart space"
   | otherwise = error "Erroneous write detected!"
   where addr = (fromIntegral r)
-store nes (Ram16 r) v = do
+
+storeRam16 :: Nes s -> Word16 -> Word16 -> ST s ()
+storeRam16 nes r v = do
   let addr = fromIntegral r
   let (lo, hi) = splitW16 v
   store nes (Ram8 addr) lo
@@ -130,4 +173,3 @@ mapper0 cart = Mapper cart readRom where
       prgBanks = (BS.length (prgRom cart)) `div` 0x4000
       prgBank1 = 0
       prgBank2 = prgBanks - 1
-
