@@ -6,7 +6,7 @@ module Emulator (
 
 import           Cartridge
 import           Control.Monad.IO.Class
-import           Data.Bits              (setBit, (.|.))
+import           Data.Bits              (setBit, (.&.), (.|.))
 import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
                                                zip)
 import           Data.Word
@@ -101,16 +101,20 @@ execute op @ (Opcode _ mn mode) = do
   go addr
   where
     go = case mn of
-      BCC   -> bcc
-      BCS   -> bcs
-      CLC   -> const clc
-      JMP   -> jmp
-      JSR   -> jsr
-      LDX   -> ldx
-      NOP   -> const nop
-      SEC   -> const sec
-      STX   -> stx
-      other -> error $ "Unimplemented opcode: " ++ (show other)
+      BCC     -> bcc
+      BCS     -> bcs
+      BEQ     -> beq
+      BNE     -> bne
+      CLC     -> const clc
+      JMP     -> jmp
+      JSR     -> jsr
+      LDA     -> lda
+      LDX     -> ldx
+      NOP     -> const nop
+      SEC     -> const sec
+      STX     -> stx
+      STA     -> sta
+      unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
 push :: MonadEmulator m => Word8 -> m ()
 push v = do
@@ -132,6 +136,14 @@ bcc = branch $ not <$> (load $ P FC)
 bcs :: MonadEmulator m => Word16 -> m ()
 bcs = branch (load $ P FC)
 
+-- Branch if zero set
+beq :: MonadEmulator m => Word16 -> m ()
+beq = branch (load $ P FZ)
+
+-- Branch if zero not set
+bne :: MonadEmulator m => Word16 -> m ()
+bne = branch $ not <$> (load $ P FZ)
+
 -- Clear carry flag
 clc :: MonadEmulator m => m ()
 clc = store (P FC) False
@@ -147,27 +159,41 @@ jsr addr = do
   push16 $ pcv - 1
   store Pc addr
 
+-- LDA - Load accumulator register
+lda :: MonadEmulator m => Word16 -> m ()
+lda addr = do
+  v <- load $ Ram8 addr
+  store A v
+  setZN v
+
 -- LDX - Load X Register
 ldx :: MonadEmulator m => Word16 -> m ()
 ldx addr = do
   v <- load $ Ram8 addr
   store X v
-  store (P FZ) True
-  store (P FN) True
-  -- TODO: set ZN flag
+  setZN v
 
+-- NOP - No operation. Do nothing :D
 nop :: MonadEmulator m => m ()
 nop = pure ()
 
+-- SEC - Set carry flag
 sec :: MonadEmulator m => m ()
 sec = store (P FC) True
 
--- STX - Store X Register
-stx :: MonadEmulator m => Word16 -> m ()
-stx addr = do
-  xv <- load X
-  store (Ram8 addr) xv
+-- STA - Store Accumulator register
+sta :: MonadEmulator m => Word16 -> m ()
+sta addr = (load A) >>= (store $ Ram8 addr)
 
+-- STX - Store X register
+stx :: MonadEmulator m => Word16 -> m ()
+stx addr = (load X) >>= (store $ Ram8 addr)
+
+-- STY - Store Y register
+sty :: MonadEmulator m => Word16 -> m ()
+sty addr = (load Y) >>= (store $ Ram8 addr)
+
+-- Moves execution to addr if condition is set
 branch :: MonadEmulator m => (m Bool) -> Word16 -> m ()
 branch cond addr = do
   c <- cond
@@ -175,6 +201,18 @@ branch cond addr = do
     store Pc addr
   else
     pure ()
+
+-- Sets the zero flag
+setZ :: MonadEmulator m => Word8 -> m ()
+setZ v = store (P FC) (v == 0)
+
+-- Sets the negative flag
+setN :: MonadEmulator m => Word8 -> m ()
+setN v = store (P FN) (v .&. 0x80 /= 0)
+
+-- Sets the zero flag and the negative flag
+setZN :: MonadEmulator m => Word8 -> m ()
+setZN v = setZ v >> setN v
 
 renderEmulator :: MonadEmulator m => m String
 renderEmulator = do

@@ -33,6 +33,7 @@ data Nes s = Nes {
   mapper :: Mapper      s,
   pc     :: STRef       s Word16,
   sp     :: STRef       s Word8,
+  a      :: STRef       s Word8,
   p      :: STRef       s Word8,
   x      :: STRef       s Word8,
   y      :: STRef       s Word8
@@ -43,6 +44,7 @@ data Address a where
   Pc    :: Address Word16
   Sp    :: Address Word8
   P     :: Flag -> Address Bool
+  A     :: Address Word8
   X     :: Address Word8
   Y     :: Address Word8
   Ram8  :: Word16 -> Address Word8
@@ -66,14 +68,16 @@ new cart = do
   pc <- newSTRef 0x0
   sp <- newSTRef 0xFD
   p <- newSTRef 0x34
+  a <- newSTRef 0x0
   x <- newSTRef 0x0
   y <- newSTRef 0x0
-  pure $ Nes mem mapper pc sp p x y
+  pure $ Nes mem mapper pc sp p a x y
 
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
   Pc        -> loadPc nes
   Sp        -> loadSp nes
+  A         -> loadA nes
   X         -> loadX nes
   Y         -> loadY nes
   (P flag)  -> loadP nes flag
@@ -85,6 +89,9 @@ loadPc nes = readSTRef (pc nes)
 
 loadSp :: Nes s -> ST s Word8
 loadSp nes = readSTRef (sp nes)
+
+loadA :: Nes s -> ST s Word8
+loadA nes = readSTRef (a nes)
 
 loadX :: Nes s -> ST s Word8
 loadX nes = readSTRef (x nes)
@@ -119,6 +126,7 @@ store :: Nes s -> Address a -> a -> ST s ()
 store nes addr v = case addr of
   Pc        -> storePc nes v
   Sp        -> storeSp nes v
+  A         -> storeA nes v
   X         -> storeX nes v
   Y         -> storeY nes v
   (P flag)  -> storeP nes flag v
@@ -130,6 +138,9 @@ storePc nes v = modifySTRef' (pc nes) (const v)
 
 storeSp :: Nes s -> Word8 -> ST s ()
 storeSp nes v = modifySTRef' (sp nes) (const v)
+
+storeA :: Nes s -> Word8 -> ST s ()
+storeA nes v  = modifySTRef' (a nes) (const v)
 
 storeX :: Nes s -> Word8 -> ST s ()
 storeX nes v  = modifySTRef' (x nes) (const v)
