@@ -41,12 +41,12 @@ data Cartridge = Cartridge {
 
 parseINesFileHeader :: BS.ByteString -> INesFileHeader
 parseINesFileHeader bs = INesFileHeader
+  (fromIntegral $ BS.index bs 3)
   (fromIntegral $ BS.index bs 4)
   (fromIntegral $ BS.index bs 5)
   (fromIntegral $ BS.index bs 6)
   (fromIntegral $ BS.index bs 7)
   (fromIntegral $ BS.index bs 8)
-  (fromIntegral $ BS.index bs 9)
 
 parseCartridge :: BS.ByteString -> Cartridge
 parseCartridge bs =

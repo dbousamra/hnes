@@ -1,4 +1,8 @@
-module Emulator () where
+module Emulator (
+  -- * Functions
+    run
+  , r
+) where
 
 import           Cartridge
 import           Control.Monad.IO.Class
@@ -55,11 +59,12 @@ addressForMode mode = case mode of
     pure $ toWord16 0
   Relative -> do
     pcv <- load Pc
-    offset <- load $ Ram16 (pcv + 1)
-    if offset < 0x80 then
-      pure $ pcv + 2 + offset
+    offset16 <- load $ Ram16 (pcv + 1)
+    let offset8 = firstNibble offset16
+    if offset8 < 0x80 then
+      pure $ pcv + 2 + offset8
     else
-      pure $ pcv + 2 + offset - 0x100
+      pure $ pcv + 2 + offset8 - 0x100
   ZeroPage -> do
     pcv <- load Pc
     v <- load $ Ram8 (pcv + 1)
@@ -73,7 +78,7 @@ pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
   (_, RTS)             -> 0
   (_, RTI)             -> 0
   (Indirect, _)        -> 0
-  (Relative, _)        -> 0
+  (Relative, _)        -> 2
   (Accumulator, _)     -> 1
   (Implied, _)         -> 1
   (Immediate, _)       -> 2
@@ -92,16 +97,18 @@ execute op @ (Opcode _ mn mode) = do
   spv <- load Sp
   liftIO $ putStrLn $ "PC: " ++ (prettifyWord16 pcv) ++ " " ++ (show op) ++ " SP: " ++ (prettifyWord8 spv)
   addr <- addressForMode mode
-  go addr
   incrementPc $ pcIncrementForOpcode op
+  go addr
   where
     go = case mn of
+      BCC   -> bcc
       BCS   -> bcs
+      CLC   -> const clc
       JMP   -> jmp
       JSR   -> jsr
       LDX   -> ldx
-      NOP   -> nop
-      SEC   -> sec
+      NOP   -> const nop
+      SEC   -> const sec
       STX   -> stx
       other -> error $ "Unimplemented opcode: " ++ (show other)
 
@@ -117,13 +124,17 @@ push16 v = do
   push hi
   push lo
 
+-- Branch on carry flag clear
+bcc :: MonadEmulator m => Word16 -> m ()
+bcc = branch $ not <$> (load $ P FC)
+
+-- Branch on carry flag set
 bcs :: MonadEmulator m => Word16 -> m ()
-bcs addr = do
-  c <- load $ P FC
-  if c then
-    store Pc addr
-  else
-    pure ()
+bcs = branch (load $ P FC)
+
+-- Clear carry flag
+clc :: MonadEmulator m => m ()
+clc = store (P FC) False
 
 -- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
@@ -145,17 +156,25 @@ ldx addr = do
   store (P FN) True
   -- TODO: set ZN flag
 
-nop :: MonadEmulator m => Word16 -> m ()
-nop addr = pure ()
+nop :: MonadEmulator m => m ()
+nop = pure ()
 
-sec :: MonadEmulator m => Word16 -> m ()
-sec addr = store (P FC) True
+sec :: MonadEmulator m => m ()
+sec = store (P FC) True
 
 -- STX - Store X Register
 stx :: MonadEmulator m => Word16 -> m ()
 stx addr = do
   xv <- load X
   store (Ram8 addr) xv
+
+branch :: MonadEmulator m => (m Bool) -> Word16 -> m ()
+branch cond addr = do
+  c <- cond
+  if c then
+    store Pc addr
+  else
+    pure ()
 
 renderEmulator :: MonadEmulator m => m String
 renderEmulator = do
@@ -167,4 +186,7 @@ renderEmulator = do
          "SP: " ++ (prettifyWord8 spv) ++ " " ++
          "X: " ++ (prettifyWord8 xv) ++ " " ++
          "Y: " ++ (prettifyWord8 xv) ++ " "
+
+trace :: (MonadIO m, MonadEmulator m) => String -> m ()
+trace v = liftIO $ putStrLn v
 

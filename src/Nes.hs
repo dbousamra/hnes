@@ -14,7 +14,7 @@ module Nes (
 import           Cartridge
 import           Constants
 import           Control.Monad.ST
-import           Data.Bits                   (setBit, testBit, (.&.))
+import           Data.Bits                   (clearBit, setBit, testBit, (.&.))
 import qualified Data.ByteString             as BS
 import           Data.STRef                  (STRef, modifySTRef', newSTRef,
                                               readSTRef)
@@ -140,7 +140,8 @@ storeY nes v  = modifySTRef' (y nes) (const v)
 storeP :: Nes s -> Flag -> Bool -> ST s ()
 storeP nes flag b = do
   v <- readSTRef (p nes)
-  modifySTRef' (p nes) (const $ setBit v (7 - fromEnum flag))
+  modifySTRef' (p nes) (const $ opBit v (7 - fromEnum flag))
+  where opBit = if b then setBit else clearBit
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v
