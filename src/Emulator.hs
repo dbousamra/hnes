@@ -6,7 +6,7 @@ module Emulator (
 
 import           Cartridge
 import           Control.Monad.IO.Class
-import           Data.Bits              (setBit, (.&.), (.|.))
+import           Data.Bits              (setBit, shiftR, (.&.), (.|.))
 import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
                                                zip)
 import           Data.Word
@@ -104,6 +104,7 @@ execute op @ (Opcode _ mn mode) = do
       BCC     -> bcc
       BCS     -> bcs
       BEQ     -> beq
+      BIT     -> bit
       BNE     -> bne
       CLC     -> const clc
       JMP     -> jmp
@@ -128,23 +129,30 @@ push16 v = do
   push hi
   push lo
 
--- Branch on carry flag clear
+-- BCC - Branch on carry flag clear
 bcc :: MonadEmulator m => Word16 -> m ()
 bcc = branch $ not <$> (load $ P FC)
 
--- Branch on carry flag set
+-- BCS - Branch on carry flag set
 bcs :: MonadEmulator m => Word16 -> m ()
 bcs = branch (load $ P FC)
 
--- Branch if zero set
+-- BEQ - Branch if zero set
 beq :: MonadEmulator m => Word16 -> m ()
 beq = branch (load $ P FZ)
 
--- Branch if zero not set
+-- BIT -
+bit :: MonadEmulator m => Word16 -> m ()
+bit addr = undefined
+  -- do
+  -- v <- load $ Ram8 addr
+  -- store $ (P FV) ((v `shiftR` 6) .&. 1)
+
+-- BNE - Branch if zero not set
 bne :: MonadEmulator m => Word16 -> m ()
 bne = branch $ not <$> (load $ P FZ)
 
--- Clear carry flag
+-- CLC - Clear carry flag
 clc :: MonadEmulator m => m ()
 clc = store (P FC) False
 
@@ -227,4 +235,3 @@ renderEmulator = do
 
 trace :: (MonadIO m, MonadEmulator m) => String -> m ()
 trace v = liftIO $ putStrLn v
-
