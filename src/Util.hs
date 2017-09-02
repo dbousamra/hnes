@@ -3,6 +3,7 @@ module Util (
     prettifyWord16
   , prettifyWord8
   , makeW16
+  , makeW16LittleEndian
   , toWord16
   , firstNibble
   , splitW16
@@ -16,13 +17,16 @@ import           System.IO.Unsafe (unsafePerformIO)
 import           Text.Printf      (printf)
 
 prettifyWord16 :: Word16 -> String
-prettifyWord16 = printf "0x%04x"
+prettifyWord16 = printf "%04X"
 
 prettifyWord8 :: Word8 -> String
-prettifyWord8 = printf "0x%02x"
+prettifyWord8 = printf "%02X"
 
 makeW16 :: Word8 -> Word8 -> Word16
-makeW16 l h = (fromIntegral l :: Word16) .|. (fromIntegral h :: Word16) `shiftL` 8
+makeW16 lo hi = (toWord16 lo) .|. (toWord16 hi) `shiftL` 8
+
+makeW16LittleEndian :: Word8 -> Word8 -> Word16
+makeW16LittleEndian lo hi = ((toWord16 hi) `shiftL` 8) .|. (toWord16 lo)
 
 toWord16 :: Word8 -> Word16
 toWord16 = fromIntegral

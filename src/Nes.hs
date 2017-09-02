@@ -14,7 +14,7 @@ module Nes (
 import           Cartridge
 import           Constants
 import           Control.Monad.ST
-import           Data.Bits                   ((.&.))
+import           Data.Bits                   (clearBit, setBit, testBit, (.&.))
 import qualified Data.ByteString             as BS
 import           Data.STRef                  (STRef, modifySTRef', newSTRef,
                                               readSTRef)
@@ -34,19 +34,19 @@ data Nes s = Nes {
   pc     :: STRef       s Word16,
   sp     :: STRef       s Word8,
   a      :: STRef       s Word8,
-  p      :: STRef       s Word8,
   x      :: STRef       s Word8,
-  y      :: STRef       s Word8
+  y      :: STRef       s Word8,
+  p      :: STRef       s Word8
 }
 
 -- GADTs are used to represent addressing
 data Address a where
   Pc    :: Address Word16
   Sp    :: Address Word8
-  P     :: Address Word8
   A     :: Address Word8
   X     :: Address Word8
   Y     :: Address Word8
+  P     :: Flag -> Address Bool
   Ram8  :: Word16 -> Address Word8
   Ram16 :: Word16 -> Address Word16
 
@@ -64,14 +64,14 @@ data Flag
 new :: Cartridge -> ST s (Nes s)
 new cart = do
   let mapper = mapper0 cart
-  mem <- VUM.replicate 65536 0x0
+  ram <- VUM.replicate 65536 0x0
   pc <- newSTRef 0x0
   sp <- newSTRef 0xFD
-  p <- newSTRef 0x34
   a <- newSTRef 0x0
   x <- newSTRef 0x0
   y <- newSTRef 0x0
-  pure $ Nes mem mapper pc sp p a x y
+  p <- newSTRef 0x24 -- should this be 0x34?
+  pure $ Nes ram mapper pc sp a x y p
 
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
@@ -80,9 +80,14 @@ load nes addr = case addr of
   A         -> readSTRef (a nes)
   X         -> readSTRef (x nes)
   Y         -> readSTRef (y nes)
-  P         -> readSTRef (p nes)
+  (P flag)  -> loadP nes flag
   (Ram8 r)  -> loadRam8 nes r
   (Ram16 r) -> loadRam16 nes r
+
+loadP :: Nes s -> Flag -> ST s Bool
+loadP nes flag = do
+  v <- readSTRef (p nes)
+  pure $ testBit v (7 - fromEnum flag)
 
 loadRam8 :: Nes s -> Word16 -> ST s Word8
 loadRam8 nes r
@@ -109,9 +114,15 @@ store nes addr v = case addr of
   A         -> modifySTRef' (a nes) (const v)
   X         -> modifySTRef' (x nes) (const v)
   Y         -> modifySTRef' (y nes) (const v)
-  P         -> modifySTRef' (p nes) (const v)
+  (P flag)  -> storeP nes flag v
   (Ram8 r)  -> storeRam8 nes r v
   (Ram16 r) -> storeRam16 nes r v
+
+storeP :: Nes s -> Flag -> Bool -> ST s ()
+storeP nes flag b = do
+  v <- readSTRef (p nes)
+  modifySTRef' (p nes) (const $ opBit v (7 - fromEnum flag))
+  where opBit = if b then setBit else clearBit
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v

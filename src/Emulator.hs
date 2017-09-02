@@ -12,7 +12,6 @@ import           Data.Bits              (clearBit, setBit, testBit, (.&.),
 import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
                                                zip)
 import           Data.Word
-import           Log
 import           Monad
 import           Nes                    (Address (..), Flag (..))
 import           Opcode
@@ -29,9 +28,7 @@ r = void $ runDebug "roms/nestest.nes" 0xC000 (pure Continue)
 run :: FilePath -> IO ()
 run fp = do
   cart <- parseCartridge <$> BS.readFile fp
-  runIOEmulator cart $ do
-    store Pc 0xC000
-    void $ emulate $ pure Continue
+  runIOEmulator cart $ void $ emulate $ pure Continue
 
 runDebug :: FilePath -> Word16 -> Monad.IOEmulator EmulatorState -> IO EmulatorState
 runDebug fp start hook = do
@@ -65,6 +62,11 @@ addressForMode mode = case mode of
   Absolute -> do
     pcv <- load Pc
     load $ Ram16 (pcv + 1)
+  AbsoluteX -> do
+    pcv <- load Pc
+    xv <- load X
+    v <- load $ Ram16 (pcv + 1)
+    pure $ v + (toWord16 xv)
   Immediate -> do
     pcv <- load Pc
     pure $ pcv + 1
@@ -86,10 +88,9 @@ addressForMode mode = case mode of
 
 pcIncrementForOpcode :: Opcode -> Word16
 pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
-  (_, JMP)             -> 0
-  (_, JSR)             -> 0
-  (_, RTS)             -> 0
-  (_, RTI)             -> 0
+  -- (_, JMP)             -> 0
+  -- (_, RTS)             -> 0
+  -- (_, RTI)             -> 0
   (Indirect, _)        -> 0
   (Relative, _)        -> 2
   (Accumulator, _)     -> 1
@@ -106,10 +107,9 @@ pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
 
 execute :: (MonadIO m, MonadEmulator m) => Opcode -> m ()
 execute op @ (Opcode _ mn mode) = do
-  pcv <- load Pc
-  spv <- load Sp
-  liftIO $ putStrLn $ "PC: " ++ (prettifyWord16 pcv) ++ " " ++ (show op) ++ " SP: " ++ (prettifyWord8 spv)
   addr <- addressForMode mode
+  line <- renderExecution op addr
+  trace line
   incrementPc $ pcIncrementForOpcode op
   go addr
   where
@@ -118,26 +118,46 @@ execute op @ (Opcode _ mn mode) = do
       BCS     -> bcs
       BEQ     -> beq
       BIT     -> bit
+      BMI     -> bmi
       BNE     -> bne
+      BPL     -> bpl
+      BVC     -> bvc
+      BVS     -> bvs
       CLC     -> const clc
+      INC     -> inc
       JMP     -> jmp
       JSR     -> jsr
       LDA     -> lda
       LDX     -> ldx
       NOP     -> const nop
+      RTS     -> const rts
       SEC     -> const sec
       STA     -> sta
       STX     -> stx
       STY     -> sty
       unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
-push :: MonadEmulator m => Word8 -> m ()
+pull :: (MonadIO m, MonadEmulator m) => m Word8
+pull = do
+  spv <- load Sp
+  store Sp (spv + 1)
+  let i = 0x100 .|. (toWord16 spv + 1)
+  load $ Ram8 i
+
+pull16 :: (MonadIO m, MonadEmulator m) => m Word16
+pull16 = do
+  lo <- pull
+  hi <- pull
+  pure $ makeW16LittleEndian lo hi
+
+push :: (MonadIO m, MonadEmulator m) => Word8 -> m ()
 push v = do
   spv <- load Sp
-  store (Ram8 $ 0x100 .|. (toWord16 spv)) v
+  let i = 0x100 .|. (toWord16 spv)
+  store (Ram8 i) v
   store Sp (spv - 1)
 
-push16 :: MonadEmulator m => Word16 -> m ()
+push16 :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 push16 v = do
   let (lo, hi) = splitW16 v
   push hi
@@ -145,37 +165,64 @@ push16 v = do
 
 -- BCC - Branch on carry flag clear
 bcc :: MonadEmulator m => Word16 -> m ()
-bcc = branch $ not <$> getFlag FC
+bcc = branch $ not <$> (load $ P FC)
 
 -- BCS - Branch on carry flag set
 bcs :: MonadEmulator m => Word16 -> m ()
-bcs = branch $ getFlag FC
+bcs = branch $ (load $ P FC)
 
 -- BEQ - Branch if zero set
 beq :: MonadEmulator m => Word16 -> m ()
-beq = branch $ getFlag FZ
+beq = branch $ (load $ P FZ)
+
+-- BMI - Branch if minus
+bmi :: MonadEmulator m => Word16 -> m ()
+bmi = branch $ (load $ P FN)
+
+-- BPL - Branch if positive
+bpl :: MonadEmulator m => Word16 -> m ()
+bpl = branch $ not <$> (load $ P FN)
+
+-- BVS - Branch if overflow clear
+bvc :: MonadEmulator m => Word16 -> m ()
+bvc = branch $ not <$> (load $ P FV)
+
+-- BVS - Branch if overflow set
+bvs :: MonadEmulator m => Word16 -> m ()
+bvs = branch $ (load $ P FV)
 
 -- BIT -
 bit :: MonadEmulator m => Word16 -> m ()
-bit addr = undefined
-  -- do
-  -- v <- load $ Ram8 addr
-  -- store $ (P FV) ((v `shiftR` 6) .&. 1)
+bit addr = do
+  v <- load $ Ram8 addr
+  av <- load A
+  let res = (v .&. av)
+  setZ res
+  setV v
+  setN v
 
 -- BNE - Branch if zero not set
 bne :: MonadEmulator m => Word16 -> m ()
-bne = branch $ not <$> getFlag FZ
+bne = branch $ not <$> (load $ P FZ)
 
 -- CLC - Clear carry flag
 clc :: MonadEmulator m => m ()
-clc = setFlag FC False
+clc = store (P FC) False
+
+-- INC - Increment memory
+inc :: MonadEmulator m => Word16 -> m ()
+inc addr = do
+  v <- load $ Ram8 addr
+  let value = v + 1
+  store (Ram8 addr) value
+  setZN value
 
 -- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
 jmp = store Pc
 
 -- JSR - Jump to subroutine
-jsr :: MonadEmulator m => Word16 -> m ()
+jsr :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 jsr addr = do
   pcv <- load Pc
   push16 $ pcv - 1
@@ -199,9 +246,15 @@ ldx addr = do
 nop :: MonadEmulator m => m ()
 nop = pure ()
 
+-- RTS - Return from a subroutine
+rts :: (MonadIO m, MonadEmulator m) => m ()
+rts = do
+  addr <- pull16
+  store Pc (addr + 1)
+
 -- SEC - Set carry flag
 sec :: MonadEmulator m => m ()
-sec = setFlag FC True
+sec = store (P FC) True
 
 -- STA - Store Accumulator register
 sta :: MonadEmulator m => Word16 -> m ()
@@ -224,25 +277,17 @@ branch cond addr = do
   else
     pure ()
 
-
-getFlag :: MonadEmulator m => Flag -> m Bool
-getFlag flag = do
-  v <- load P
-  pure $ testBit v (7 - fromEnum flag)
-
-setFlag :: MonadEmulator m => Flag -> Bool -> m ()
-setFlag flag b = do
-  v <- load P
-  store P (opBit v (7 - fromEnum flag))
-  where opBit = if b then setBit else clearBit
-
 -- Sets the zero flag
 setZ :: MonadEmulator m => Word8 -> m ()
-setZ v = setFlag FZ (v == 0)
+setZ v = store (P FZ) (v == 0)
 
 -- Sets the negative flag
 setN :: MonadEmulator m => Word8 -> m ()
-setN v = setFlag FN (v .&. 0x80 /= 0)
+setN v = store (P FN) (v .&. 0x80 /= 0)
+
+-- Sets the overflow flag
+setV :: MonadEmulator m => Word8 -> m ()
+setV v = store (P FV) (v .&. 0x40 /= 0)
 
 -- Sets the zero flag and the negative flag
 setZN :: MonadEmulator m => Word8 -> m ()
@@ -250,3 +295,25 @@ setZN v = setZ v >> setN v
 
 trace :: (MonadIO m, MonadEmulator m) => String -> m ()
 trace v = liftIO $ putStrLn v
+
+-- Fix this pos up
+renderExecution :: MonadEmulator m => Opcode -> Word16 -> m String
+renderExecution (Opcode raw mnem _) addr = do
+  pcv <- load Pc
+  spv <- load Sp
+  av  <- load A
+  xv  <- load X
+  yv  <- load Y
+  let (hiAddr, loAddr) = splitW16 addr
+  pure $ (show mnem) ++ "  " ++
+         (prettifyWord16 pcv) ++ "  " ++
+         (prettifyWord8 raw) ++ " " ++
+         (prettifyWord8 hiAddr) ++ " " ++
+         (prettifyWord8 loAddr) ++ " " ++
+         (replicate 33 ' ') ++
+         "A:"  ++ (prettifyWord8 av) ++ " " ++
+         "X:"  ++ (prettifyWord8 xv) ++ " " ++
+         "Y:"  ++ (prettifyWord8 yv) ++ " " ++
+        --  "P:"  ++ (prettifyWord8 pv) ++ " " ++
+         "SP:" ++ (prettifyWord8 spv) ++ " "
+
