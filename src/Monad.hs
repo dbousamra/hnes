@@ -3,19 +3,16 @@
 module Monad (
   -- * Types
     MonadEmulator(..)
+  , IOEmulator
   -- * Functions
   , runIOEmulator
 ) where
 
 import           Cartridge
-import           Control.Monad.IO.Class
-import           Control.Monad.Reader   (ReaderT, ask, runReaderT)
-import           Control.Monad.ST       (RealWorld, stToIO)
-import           Control.Monad.Trans    (MonadIO, lift)
-import           Data.Semigroup         ((<>))
-import           Data.Word
+import           Control.Monad.Reader (ReaderT, ask, runReaderT)
+import           Control.Monad.ST     (RealWorld, stToIO)
+import           Control.Monad.Trans  (MonadIO, lift)
 import           Nes
-import           Util
 
 class Monad m => MonadEmulator m where
   load :: Address a -> m a

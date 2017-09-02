@@ -14,7 +14,7 @@ module Nes (
 import           Cartridge
 import           Constants
 import           Control.Monad.ST
-import           Data.Bits                   (clearBit, setBit, testBit, (.&.))
+import           Data.Bits                   ((.&.))
 import qualified Data.ByteString             as BS
 import           Data.STRef                  (STRef, modifySTRef', newSTRef,
                                               readSTRef)
@@ -43,7 +43,7 @@ data Nes s = Nes {
 data Address a where
   Pc    :: Address Word16
   Sp    :: Address Word8
-  P     :: Flag -> Address Bool
+  P     :: Address Word8
   A     :: Address Word8
   X     :: Address Word8
   Y     :: Address Word8
@@ -75,34 +75,14 @@ new cart = do
 
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
-  Pc        -> loadPc nes
-  Sp        -> loadSp nes
-  A         -> loadA nes
-  X         -> loadX nes
-  Y         -> loadY nes
-  (P flag)  -> loadP nes flag
+  Pc        -> readSTRef (pc nes)
+  Sp        -> readSTRef (sp nes)
+  A         -> readSTRef (a nes)
+  X         -> readSTRef (x nes)
+  Y         -> readSTRef (y nes)
+  P         -> readSTRef (p nes)
   (Ram8 r)  -> loadRam8 nes r
   (Ram16 r) -> loadRam16 nes r
-
-loadPc :: Nes s -> ST s Word16
-loadPc nes = readSTRef (pc nes)
-
-loadSp :: Nes s -> ST s Word8
-loadSp nes = readSTRef (sp nes)
-
-loadA :: Nes s -> ST s Word8
-loadA nes = readSTRef (a nes)
-
-loadX :: Nes s -> ST s Word8
-loadX nes = readSTRef (x nes)
-
-loadY :: Nes s -> ST s Word8
-loadY nes = readSTRef (y nes)
-
-loadP :: Nes s -> Flag -> ST s Bool
-loadP nes flag = do
-  v <- readSTRef (p nes)
-  pure $ testBit v (7 - fromEnum flag)
 
 loadRam8 :: Nes s -> Word16 -> ST s Word8
 loadRam8 nes r
@@ -124,35 +104,14 @@ loadRam16 nes r = do
 
 store :: Nes s -> Address a -> a -> ST s ()
 store nes addr v = case addr of
-  Pc        -> storePc nes v
-  Sp        -> storeSp nes v
-  A         -> storeA nes v
-  X         -> storeX nes v
-  Y         -> storeY nes v
-  (P flag)  -> storeP nes flag v
+  Pc        -> modifySTRef' (pc nes) (const v)
+  Sp        -> modifySTRef' (sp nes) (const v)
+  A         -> modifySTRef' (a nes) (const v)
+  X         -> modifySTRef' (x nes) (const v)
+  Y         -> modifySTRef' (y nes) (const v)
+  P         -> modifySTRef' (p nes) (const v)
   (Ram8 r)  -> storeRam8 nes r v
   (Ram16 r) -> storeRam16 nes r v
-
-storePc :: Nes s -> Word16 -> ST s ()
-storePc nes v = modifySTRef' (pc nes) (const v)
-
-storeSp :: Nes s -> Word8 -> ST s ()
-storeSp nes v = modifySTRef' (sp nes) (const v)
-
-storeA :: Nes s -> Word8 -> ST s ()
-storeA nes v  = modifySTRef' (a nes) (const v)
-
-storeX :: Nes s -> Word8 -> ST s ()
-storeX nes v  = modifySTRef' (x nes) (const v)
-
-storeY :: Nes s -> Word8 -> ST s ()
-storeY nes v  = modifySTRef' (y nes) (const v)
-
-storeP :: Nes s -> Flag -> Bool -> ST s ()
-storeP nes flag b = do
-  v <- readSTRef (p nes)
-  modifySTRef' (p nes) (const $ opBit v (7 - fromEnum flag))
-  where opBit = if b then setBit else clearBit
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v

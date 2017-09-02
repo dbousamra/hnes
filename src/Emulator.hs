@@ -5,28 +5,40 @@ module Emulator (
 ) where
 
 import           Cartridge
+import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (setBit, shiftR, (.&.), (.|.))
+import           Data.Bits              (clearBit, setBit, testBit, (.&.),
+                                         (.|.))
 import           Data.ByteString        as BS hiding (putStrLn, replicate, take,
                                                zip)
 import           Data.Word
+import           Log
 import           Monad
 import           Nes                    (Address (..), Flag (..))
 import           Opcode
 import           Util
 
-run :: FilePath -> IO ()
-run fp = do
-  cart <- parseCartridge <$> readBytes fp
-  runIOEmulator cart $ do
-    store Pc 0xC000
-    emulate 0 100
+data EmulatorState
+  = Continue
+  | Fail
+  deriving (Eq)
 
 r :: IO ()
-r = run "roms/nestest.nes"
+r = void $ runDebug "roms/nestest.nes" 0xC000 (pure Continue)
 
-readBytes :: FilePath -> IO ByteString
-readBytes = BS.readFile
+run :: FilePath -> IO ()
+run fp = do
+  cart <- parseCartridge <$> BS.readFile fp
+  runIOEmulator cart $ do
+    store Pc 0xC000
+    void $ emulate $ pure Continue
+
+runDebug :: FilePath -> Word16 -> Monad.IOEmulator EmulatorState -> IO EmulatorState
+runDebug fp start hook = do
+  cart <- parseCartridge <$> BS.readFile fp
+  runIOEmulator cart $ do
+    store Pc start
+    emulate hook
 
 loadNextOpcode :: (MonadIO m, MonadEmulator m) => m Opcode
 loadNextOpcode = do
@@ -34,13 +46,14 @@ loadNextOpcode = do
   pcv <- load (Ram8 pc)
   pure $ decodeOpcode pcv
 
-emulate :: (MonadIO m, MonadEmulator m) => Int -> Int -> m ()
-emulate n max =
-  if n >= max then pure ()
-  else do
-    opcode <- loadNextOpcode
-    execute opcode
-    emulate (n + 1) max
+emulate :: (MonadIO m, MonadEmulator m) => m EmulatorState -> m EmulatorState
+emulate hook = do
+  opcode <- loadNextOpcode
+  execute opcode
+  hookRes <- hook
+  case hookRes of
+    Continue -> emulate hook
+    Fail     -> pure Fail
 
 incrementPc :: MonadEmulator m => Word16 -> m ()
 incrementPc n = do
@@ -113,8 +126,9 @@ execute op @ (Opcode _ mn mode) = do
       LDX     -> ldx
       NOP     -> const nop
       SEC     -> const sec
-      STX     -> stx
       STA     -> sta
+      STX     -> stx
+      STY     -> sty
       unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
 push :: MonadEmulator m => Word8 -> m ()
@@ -131,15 +145,15 @@ push16 v = do
 
 -- BCC - Branch on carry flag clear
 bcc :: MonadEmulator m => Word16 -> m ()
-bcc = branch $ not <$> (load $ P FC)
+bcc = branch $ not <$> getFlag FC
 
 -- BCS - Branch on carry flag set
 bcs :: MonadEmulator m => Word16 -> m ()
-bcs = branch (load $ P FC)
+bcs = branch $ getFlag FC
 
 -- BEQ - Branch if zero set
 beq :: MonadEmulator m => Word16 -> m ()
-beq = branch (load $ P FZ)
+beq = branch $ getFlag FZ
 
 -- BIT -
 bit :: MonadEmulator m => Word16 -> m ()
@@ -150,11 +164,11 @@ bit addr = undefined
 
 -- BNE - Branch if zero not set
 bne :: MonadEmulator m => Word16 -> m ()
-bne = branch $ not <$> (load $ P FZ)
+bne = branch $ not <$> getFlag FZ
 
 -- CLC - Clear carry flag
 clc :: MonadEmulator m => m ()
-clc = store (P FC) False
+clc = setFlag FC False
 
 -- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
@@ -187,7 +201,7 @@ nop = pure ()
 
 -- SEC - Set carry flag
 sec :: MonadEmulator m => m ()
-sec = store (P FC) True
+sec = setFlag FC True
 
 -- STA - Store Accumulator register
 sta :: MonadEmulator m => Word16 -> m ()
@@ -210,28 +224,29 @@ branch cond addr = do
   else
     pure ()
 
+
+getFlag :: MonadEmulator m => Flag -> m Bool
+getFlag flag = do
+  v <- load P
+  pure $ testBit v (7 - fromEnum flag)
+
+setFlag :: MonadEmulator m => Flag -> Bool -> m ()
+setFlag flag b = do
+  v <- load P
+  store P (opBit v (7 - fromEnum flag))
+  where opBit = if b then setBit else clearBit
+
 -- Sets the zero flag
 setZ :: MonadEmulator m => Word8 -> m ()
-setZ v = store (P FC) (v == 0)
+setZ v = setFlag FZ (v == 0)
 
 -- Sets the negative flag
 setN :: MonadEmulator m => Word8 -> m ()
-setN v = store (P FN) (v .&. 0x80 /= 0)
+setN v = setFlag FN (v .&. 0x80 /= 0)
 
 -- Sets the zero flag and the negative flag
 setZN :: MonadEmulator m => Word8 -> m ()
 setZN v = setZ v >> setN v
-
-renderEmulator :: MonadEmulator m => m String
-renderEmulator = do
-  pcv <- load Pc
-  spv <- load Sp
-  xv  <- load X
-  yv  <- load Y
-  pure $ "PC: " ++ (prettifyWord16 pcv) ++ " " ++
-         "SP: " ++ (prettifyWord8 spv) ++ " " ++
-         "X: " ++ (prettifyWord8 xv) ++ " " ++
-         "Y: " ++ (prettifyWord8 xv) ++ " "
 
 trace :: (MonadIO m, MonadEmulator m) => String -> m ()
 trace v = liftIO $ putStrLn v
