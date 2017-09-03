@@ -7,7 +7,7 @@ module Emulator (
 import           Cartridge
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (clearBit, setBit, testBit, (.&.),
+import           Data.Bits              (clearBit, setBit, testBit, xor, (.&.),
                                          (.|.))
 import qualified Data.ByteString        as BS
 import           Data.Word
@@ -131,6 +131,7 @@ execute op @ (Opcode _ mn mode) = do
       CMP     -> cmp
       CPX     -> cpx
       CPY     -> cpy
+      EOR     -> eor
       INC     -> inc
       JMP     -> jmp
       JSR     -> jsr
@@ -149,6 +150,12 @@ execute op @ (Opcode _ mn mode) = do
       STA     -> sta
       STX     -> stx
       STY     -> sty
+      TAX     -> tax
+      TAY     -> tay
+      TSX     -> tsx
+      TXA     -> txa
+      TXS     -> const txs
+      TYA     -> const tya
       unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
 -- AND - Logical and
@@ -159,6 +166,19 @@ and addr = do
   store A (av .&. v)
   av' <- load A
   setZN av'
+
+-- ADC - Add with carry
+adc :: MonadEmulator m => Word16 -> m ()
+adc addr = do
+  av <- load A
+  v <- load $ Ram8 addr
+  cv <- getFlag Carry
+  -- let newAv = av + v + cv
+  -- store A newAv
+  -- setZN newAv
+
+  undefined
+
 
 -- BCC - Branch on carry flag clear
 bcc :: MonadEmulator m => Word16 -> m ()
@@ -238,6 +258,16 @@ cpy addr = do
   v <- load $ Ram8 addr
   yv <- load Y
   compare yv v
+
+-- EOR - Exclusive or
+eor :: MonadEmulator m => Word16 -> m ()
+eor addr = do
+  v <- load $ Ram8 addr
+  av <- load A
+  let newAv = av `xor` v
+  store A newAv
+  setZN av
+
 
 -- INC - Increment memory
 inc :: MonadEmulator m => Word16 -> m ()
@@ -339,6 +369,52 @@ stx addr = (load X) >>= (store $ Ram8 addr)
 -- STY - Store Y register
 sty :: MonadEmulator m => Word16 -> m ()
 sty addr = (load Y) >>= (store $ Ram8 addr)
+
+-- TAX - Transfer Accumulator to X
+tax :: MonadEmulator m => Word16 -> m ()
+tax addr = do
+  av <- load A
+  store X av
+  xv <- load X
+  setZN xv
+
+-- TAY - Transfer Accumulator to Y
+tay :: MonadEmulator m => Word16 -> m ()
+tay addr =  do
+  av <- load A
+  store Y av
+  yv <- load Y
+  setZN yv
+
+-- TSX - Transfer Stack Pointer to X
+tsx :: MonadEmulator m => Word16 -> m ()
+tsx addr = do
+  spv <- load Sp
+  store X spv
+  xv <- load X
+  setZN xv
+
+-- TXA - Transfer X to Accumulator
+txa :: MonadEmulator m => Word16 -> m ()
+txa addr = do
+  xv <- load X
+  store A xv
+  av <- load A
+  setZN av
+
+-- TXS - Transfer X to Stack Pointer
+txs :: MonadEmulator m => m ()
+txs = do
+  xv <- load X
+  store Sp xv
+
+-- TYA - Transfer Y to Accumulator
+tya :: MonadEmulator m => m ()
+tya = do
+  yv <- load Y
+  store A yv
+  av <- load A
+  setZN av
 
 -- Moves execution to addr if condition is set
 branch :: MonadEmulator m => (m Bool) -> Word16 -> m ()

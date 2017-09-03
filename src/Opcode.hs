@@ -28,7 +28,7 @@ data AddressMode
     deriving (Show, Eq)
 
 data Mnemonic
-  -- Official
+  -- Official - 47
   = ADC | AND | ASL | BCC | BCS | BEQ
   | BIT | BMI | BNE | BPL | BRK | BVC
   | BVS | CLC | CLD | CLI | CLV | CMP
@@ -39,7 +39,7 @@ data Mnemonic
   | RTS | SBC | SEC | SED | SEI | STA
   | STX | STY | TAX | TAY | TSX | TXA
   | TXS | TYA
-  -- Illegal / Unofficial
+  -- Illegal / Unofficial - 19
   | KIL | LAX | SAX | DCP | ISC | RLA
   | RRA | SLO | SRE | ANC | ALR | ARR
   | XAA | AHX | TAS | SHX | SHY | LAS
