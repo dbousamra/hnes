@@ -46,19 +46,20 @@ data Address a where
   A     :: Address Word8
   X     :: Address Word8
   Y     :: Address Word8
-  P     :: Flag -> Address Bool
+  -- P     :: Flag -> Address Bool
+  P     :: Address Word8
   Ram8  :: Word16 -> Address Word8
   Ram16 :: Word16 -> Address Word16
 
 data Flag
-  = FN
-  | FV
+  = Negative
+  | Overflow
   | F1
   | FB
-  | FD
-  | FI
-  | FZ
-  | FC
+  | Decimal
+  | Interrupt
+  | Zero
+  | Carry
   deriving (Enum)
 
 new :: Cartridge -> ST s (Nes s)
@@ -80,14 +81,9 @@ load nes addr = case addr of
   A         -> readSTRef (a nes)
   X         -> readSTRef (x nes)
   Y         -> readSTRef (y nes)
-  (P flag)  -> loadP nes flag
+  P         -> readSTRef (p nes)
   (Ram8 r)  -> loadRam8 nes r
   (Ram16 r) -> loadRam16 nes r
-
-loadP :: Nes s -> Flag -> ST s Bool
-loadP nes flag = do
-  v <- readSTRef (p nes)
-  pure $ testBit v (7 - fromEnum flag)
 
 loadRam8 :: Nes s -> Word16 -> ST s Word8
 loadRam8 nes r
@@ -114,15 +110,9 @@ store nes addr v = case addr of
   A         -> modifySTRef' (a nes) (const v)
   X         -> modifySTRef' (x nes) (const v)
   Y         -> modifySTRef' (y nes) (const v)
-  (P flag)  -> storeP nes flag v
+  P         -> modifySTRef' (p nes) (const v)
   (Ram8 r)  -> storeRam8 nes r v
   (Ram16 r) -> storeRam16 nes r v
-
-storeP :: Nes s -> Flag -> Bool -> ST s ()
-storeP nes flag b = do
-  v <- readSTRef (p nes)
-  modifySTRef' (p nes) (const $ opBit v (7 - fromEnum flag))
-  where opBit = if b then setBit else clearBit
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v

@@ -3,7 +3,6 @@ module Util (
     prettifyWord16
   , prettifyWord8
   , makeW16
-  , makeW16LittleEndian
   , toWord16
   , firstNibble
   , splitW16
@@ -24,9 +23,6 @@ prettifyWord8 = printf "%02X"
 
 makeW16 :: Word8 -> Word8 -> Word16
 makeW16 lo hi = (toWord16 lo) .|. (toWord16 hi) `shiftL` 8
-
-makeW16LittleEndian :: Word8 -> Word8 -> Word16
-makeW16LittleEndian lo hi = ((toWord16 hi) `shiftL` 8) .|. (toWord16 lo)
 
 toWord16 :: Word8 -> Word16
 toWord16 = fromIntegral
