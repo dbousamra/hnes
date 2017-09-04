@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Monad (
+module Emulator.Monad (
   -- * Types
     MonadEmulator(..)
   , IOEmulator
@@ -8,11 +8,11 @@ module Monad (
   , runIOEmulator
 ) where
 
-import           Cartridge
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.ST     (RealWorld, stToIO)
 import           Control.Monad.Trans  (MonadIO, lift)
-import           Nes
+import           Emulator.Cartridge
+import           Emulator.Nes         as Nes
 
 class Monad m => MonadEmulator m where
   load :: Address a -> m a

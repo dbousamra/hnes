@@ -1,4 +1,4 @@
-module Util (
+module Emulator.Util (
   -- * Functions
     prettifyWord16
   , prettifyWord8

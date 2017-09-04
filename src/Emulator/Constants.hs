@@ -1,4 +1,4 @@
-module Constants where
+module Emulator.Constants where
 
 import           Data.Word
 

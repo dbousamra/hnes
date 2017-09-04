@@ -1,4 +1,4 @@
-module Opcode (
+module Emulator.Opcode (
   -- * Types
     Mnemonic(..)
   , AddressMode(..)
@@ -9,7 +9,7 @@ module Opcode (
 ) where
 
 import           Data.Word
-import           Util
+import           Emulator.Util
 
 data AddressMode
   = Implied

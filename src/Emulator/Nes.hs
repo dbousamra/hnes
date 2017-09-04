@@ -1,6 +1,6 @@
 {-# LANGUAGE GADTs #-}
 
-module Nes (
+module Emulator.Nes (
   -- * Types
     Nes(..)
   , Address(..)
@@ -11,8 +11,6 @@ module Nes (
   , store
 ) where
 
-import           Cartridge
-import           Constants
 import           Control.Monad.ST
 import           Data.Bits                   (clearBit, setBit, testBit, (.&.))
 import qualified Data.ByteString             as BS
@@ -20,8 +18,10 @@ import           Data.STRef                  (STRef, modifySTRef', newSTRef,
                                               readSTRef)
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
+import           Emulator.Cartridge
+import           Emulator.Constants
+import           Emulator.Util
 import           Prelude                     hiding (replicate)
-import           Util
 
 data Mapper s = Mapper {
   cart    :: Cartridge,

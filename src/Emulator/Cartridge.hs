@@ -1,4 +1,4 @@
-module Cartridge (
+module Emulator.Cartridge (
   -- * Types
     Cartridge(..)
   -- * Functions
@@ -8,7 +8,7 @@ module Cartridge (
 import           Data.Bits       (shiftL, unsafeShiftR, (.&.), (.|.))
 import qualified Data.ByteString as BS
 import           Data.Word
-import           Util            (sliceBS)
+import           Emulator.Util   (sliceBS)
 
 headerSize :: Int
 headerSize = 0x10

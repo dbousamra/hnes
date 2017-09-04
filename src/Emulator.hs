@@ -4,18 +4,18 @@ module Emulator (
   , r
 ) where
 
-import           Cartridge
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Bits              (clearBit, setBit, testBit, xor, (.&.),
                                          (.|.))
 import qualified Data.ByteString        as BS
 import           Data.Word
-import           Monad
-import           Nes                    (Address (..), Flag (..))
-import           Opcode
+import           Emulator.Cartridge
+import           Emulator.Monad
+import           Emulator.Nes           (Address (..), Flag (..))
+import           Emulator.Opcode
+import           Emulator.Util
 import           Prelude                hiding (and, compare)
-import           Util
 
 data EmulatorState
   = Continue
@@ -30,7 +30,7 @@ run fp = do
   cart <- parseCartridge <$> BS.readFile fp
   runIOEmulator cart $ void $ emulate $ pure Continue
 
-runDebug :: FilePath -> Word16 -> Monad.IOEmulator EmulatorState -> IO EmulatorState
+runDebug :: FilePath -> Word16 -> IOEmulator EmulatorState -> IO EmulatorState
 runDebug fp start hook = do
   cart <- parseCartridge <$> BS.readFile fp
   runIOEmulator cart $ do
@@ -88,9 +88,6 @@ addressForMode mode = case mode of
 
 pcIncrementForOpcode :: Opcode -> Word16
 pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
-  -- (_, JMP)             -> 0
-  -- (_, RTS)             -> 0
-  -- (_, RTI)             -> 0
   (Indirect, _)        -> 0
   (Relative, _)        -> 2
   (Accumulator, _)     -> 1
