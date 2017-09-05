@@ -4,6 +4,7 @@ module Emulator.Opcode (
   , AddressMode(..)
   , Opcode(..)
   -- * Functions
+  , instructionLength
   , decodeOpcode
 
 ) where
@@ -55,6 +56,22 @@ instance Show Opcode where
       ++ (prettifyWord8 raw) ++ " "
       ++ (show mn) ++ " "
       ++ (show mode)
+
+instructionLength :: Opcode -> Word16
+instructionLength (Opcode _ mn mode) = case (mode, mn) of
+  (Indirect, _)        -> 0
+  (Relative, _)        -> 2
+  (Accumulator, _)     -> 1
+  (Implied, _)         -> 1
+  (Immediate, _)       -> 2
+  (IndexedIndirect, _) -> 2
+  (IndirectIndexed, _) -> 2
+  (ZeroPage, _)        -> 2
+  (ZeroPageX, _)       -> 2
+  (ZeroPageY, _)       -> 2
+  (Absolute, _)        -> 3
+  (AbsoluteX, _)       -> 3
+  (AbsoluteY, _)       -> 3
 
 -- see https://github.com/blitzcode/neskell
 decodeOpcode :: Word8 -> Opcode
@@ -149,3 +166,4 @@ decodeOpcode w = (Opcode w mnemonic addressMode)
       0x9F -> (AHX, AbsoluteY)       ; 0x9B -> (TAS, AbsoluteY)       ; 0x9E -> (SHX, AbsoluteY)
       0x9C -> (SHY, AbsoluteX)       ; 0xBB -> (LAS, AbsoluteY)       ; 0xCB -> (AXS, Immediate)
       other -> error $ (show other) ++ " is not a known opcode"
+

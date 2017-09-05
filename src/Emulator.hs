@@ -1,7 +1,10 @@
 module Emulator (
   -- * Functions
     run
+  , runDebug
   , r
+  , execute
+  , loadNextOpcode
 ) where
 
 import           Control.Monad
@@ -14,50 +17,60 @@ import           Emulator.Cartridge
 import           Emulator.Monad
 import           Emulator.Nes           (Address (..), Flag (..))
 import           Emulator.Opcode
+import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
 import           Prelude                hiding (and, compare)
-
-data EmulatorState
-  = Continue
-  | Fail
-  deriving (Eq)
+import           Text.Printf            (printf)
 
 r :: IO ()
-r = void $ runDebug "roms/nestest.nes" 0xC000 (pure Continue)
+r = void $ runDebug "roms/nestest.nes" (pure 0xC000)
 
 run :: FilePath -> IO ()
 run fp = do
   cart <- parseCartridge <$> BS.readFile fp
-  runIOEmulator cart $ void $ emulate $ pure Continue
+  runIOEmulator cart $ void emulate
 
-runDebug :: FilePath -> Word16 -> IOEmulator EmulatorState -> IO EmulatorState
-runDebug fp start hook = do
+runDebug :: FilePath -> Maybe Word16 -> IO [Trace]
+runDebug fp startPc = do
   cart <- parseCartridge <$> BS.readFile fp
   runIOEmulator cart $ do
-    store Pc start
-    emulate hook
+    case startPc of
+      Just v  -> store Pc v
+      Nothing -> pure ()
+    emulateDebug
 
-loadNextOpcode :: (MonadIO m, MonadEmulator m) => m Opcode
+emulate :: MonadEmulator m => m ()
+emulate = do
+  opcode <- loadNextOpcode
+  execute opcode
+  emulate
+
+emulateDebug :: (MonadIO m, MonadEmulator m) => m [Trace]
+emulateDebug = go [] where
+  go acc = do
+    opcode <- loadNextOpcode
+    trace <- execute opcode
+    liftIO $ putStrLn $ renderTrace trace
+    if (length acc) > 0 then
+      pure acc
+    else
+      go (acc ++ [trace])
+
+execute :: MonadEmulator m => Opcode -> m Trace
+execute op @ (Opcode _ mn mode) = do
+  addr <- addressForMode mode
+  trace <- trace op addr
+  incrementPc $ instructionLength op
+  instructionMapping mn addr
+  pure trace
+
+loadNextOpcode :: MonadEmulator m => m Opcode
 loadNextOpcode = do
   pc <- load Pc
   pcv <- load (Ram8 pc)
   pure $ decodeOpcode pcv
 
-emulate :: (MonadIO m, MonadEmulator m) => m EmulatorState -> m EmulatorState
-emulate hook = do
-  opcode <- loadNextOpcode
-  execute opcode
-  hookRes <- hook
-  case hookRes of
-    Continue -> emulate hook
-    Fail     -> pure Fail
-
-incrementPc :: MonadEmulator m => Word16 -> m ()
-incrementPc n = do
-  pc <- load Pc
-  store Pc (pc + n)
-
-addressForMode :: (MonadIO m, MonadEmulator m) => AddressMode -> m Word16
+addressForMode :: MonadEmulator m => AddressMode -> m Word16
 addressForMode mode = case mode of
   Absolute -> do
     pcv <- load Pc
@@ -86,74 +99,51 @@ addressForMode mode = case mode of
     pure $ toWord16 v
   other -> error $ "Unimplemented AddressMode " ++ (show other)
 
-pcIncrementForOpcode :: Opcode -> Word16
-pcIncrementForOpcode (Opcode _ mn mode) = case (mode, mn) of
-  (Indirect, _)        -> 0
-  (Relative, _)        -> 2
-  (Accumulator, _)     -> 1
-  (Implied, _)         -> 1
-  (Immediate, _)       -> 2
-  (IndexedIndirect, _) -> 2
-  (IndirectIndexed, _) -> 2
-  (ZeroPage, _)        -> 2
-  (ZeroPageX, _)       -> 2
-  (ZeroPageY, _)       -> 2
-  (Absolute, _)        -> 3
-  (AbsoluteX, _)       -> 3
-  (AbsoluteY, _)       -> 3
-
-execute :: (MonadIO m, MonadEmulator m) => Opcode -> m ()
-execute op @ (Opcode _ mn mode) = do
-  addr <- addressForMode mode
-  line <- renderExecution op addr
-  trace line
-  incrementPc $ pcIncrementForOpcode op
-  go addr
-  where
-    go = case mn of
-      AND     -> and
-      BCC     -> bcc
-      BCS     -> bcs
-      BEQ     -> beq
-      BIT     -> bit
-      BMI     -> bmi
-      BNE     -> bne
-      BPL     -> bpl
-      BVC     -> bvc
-      BVS     -> bvs
-      CLC     -> const clc
-      CLD     -> const cld
-      CLI     -> const cli
-      CLV     -> const clv
-      CMP     -> cmp
-      CPX     -> cpx
-      CPY     -> cpy
-      EOR     -> eor
-      INC     -> inc
-      JMP     -> jmp
-      JSR     -> jsr
-      LDA     -> lda
-      LDX     -> ldx
-      NOP     -> const nop
-      PHA     -> const pha
-      PHP     -> const php
-      PLA     -> const pla
-      PLP     -> const plp
-      ORA     -> ora
-      RTS     -> const rts
-      SEC     -> const sec
-      SED     -> const sed
-      SEI     -> const sei
-      STA     -> sta
-      STX     -> stx
-      STY     -> sty
-      TAX     -> tax
-      TAY     -> tay
-      TSX     -> tsx
-      TXA     -> txa
-      TXS     -> const txs
-      TYA     -> const tya
-      unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
+instructionMapping :: MonadEmulator m => Mnemonic -> (Word16 -> m ())
+instructionMapping mnemonic = case mnemonic of
+  AND     -> and
+  BCC     -> bcc
+  BCS     -> bcs
+  BEQ     -> beq
+  BIT     -> bit
+  BMI     -> bmi
+  BNE     -> bne
+  BPL     -> bpl
+  BVC     -> bvc
+  BVS     -> bvs
+  CLC     -> const clc
+  CLD     -> const cld
+  CLI     -> const cli
+  CLV     -> const clv
+  CMP     -> cmp
+  CPX     -> cpx
+  CPY     -> cpy
+  EOR     -> eor
+  INC     -> inc
+  JMP     -> jmp
+  JSR     -> jsr
+  LDA     -> lda
+  LDX     -> ldx
+  NOP     -> const nop
+  PHA     -> const pha
+  PHP     -> const php
+  PLA     -> const pla
+  PLP     -> const plp
+  ORA     -> ora
+  RTS     -> const rts
+  SEC     -> const sec
+  SED     -> const sed
+  SEI     -> const sei
+  STA     -> sta
+  STX     -> stx
+  STY     -> sty
+  TAX     -> tax
+  TAY     -> tay
+  TSX     -> tsx
+  TXA     -> txa
+  TXS     -> const txs
+  TYA     -> const tya
+  unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
 -- AND - Logical and
 and :: MonadEmulator m => Word16 -> m ()
@@ -279,7 +269,7 @@ jmp :: MonadEmulator m => Word16 -> m ()
 jmp = store Pc
 
 -- JSR - Jump to subroutine
-jsr :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+jsr :: MonadEmulator m => Word16 -> m ()
 jsr addr = do
   pcv <- load Pc
   push16 $ pcv - 1
@@ -329,13 +319,13 @@ pha = do
   push av
 
 -- RTS - Return from a subroutine
-rts :: (MonadIO m, MonadEmulator m) => m ()
+rts :: MonadEmulator m => m ()
 rts = do
   addr <- pull16
   store Pc (addr + 1)
 
 -- ORA - Logical Inclusive OR
-ora :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+ora :: MonadEmulator m => Word16 -> m ()
 ora addr = do
   v <- load$ Ram8 addr
   av <- load A
@@ -413,6 +403,11 @@ tya = do
   av <- load A
   setZN av
 
+incrementPc :: MonadEmulator m => Word16 -> m ()
+incrementPc n = do
+  pc <- load Pc
+  store Pc (pc + n)
+
 -- Moves execution to addr if condition is set
 branch :: MonadEmulator m => (m Bool) -> Word16 -> m ()
 branch cond addr = do
@@ -421,6 +416,7 @@ branch cond addr = do
     store Pc addr
   else
     pure ()
+
 getFlag :: MonadEmulator m => Flag -> m Bool
 getFlag flag = do
   v <- load P
@@ -482,27 +478,15 @@ compare a b = do
   else
     setFlag Carry False
 
-trace :: (MonadIO m, MonadEmulator m) => String -> m ()
-trace v = liftIO $ putStrLn v
-
--- Fix this pos up
-renderExecution :: MonadEmulator m => Opcode -> Word16 -> m String
-renderExecution (Opcode raw mnem _) addr = do
+trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
+trace op addr = do
   pcv <- load Pc
+  a0 <- load (Ram8 $ pcv)
+  a1 <- load (Ram8 $ pcv + 1)
+  a2 <- load (Ram8 $ pcv + 2)
   spv <- load Sp
   av  <- load A
   xv  <- load X
   yv  <- load Y
-  let (hiAddr, loAddr) = splitW16 addr
-  pure $ (show mnem) ++ "  " ++
-         (prettifyWord16 pcv) ++ "  " ++
-         (prettifyWord8 raw) ++ " " ++
-         (prettifyWord8 hiAddr) ++ " " ++
-         (prettifyWord8 loAddr) ++ " " ++
-         (replicate 33 ' ') ++
-         "A:"  ++ (prettifyWord8 av) ++ " " ++
-         "X:"  ++ (prettifyWord8 xv) ++ " " ++
-         "Y:"  ++ (prettifyWord8 yv) ++ " " ++
-        --  "P:"  ++ (prettifyWord8 pv) ++ " " ++
-         "SP:" ++ (prettifyWord8 spv) ++ " "
-
+  pv  <- load P
+  pure (Trace pcv spv av xv yv pv op a0 a1 a2)
