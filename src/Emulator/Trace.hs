@@ -1,7 +1,5 @@
 module Emulator.Trace (
-  -- * Types
     Trace(..)
-  -- * Functions
   , renderTrace
 ) where
 

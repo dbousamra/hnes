@@ -1,11 +1,9 @@
 {-# LANGUAGE GADTs #-}
 
 module Emulator.Nes (
-  -- * Types
     Nes(..)
   , Address(..)
   , Flag(..)
-  -- * Functions
   , new
   , load
   , store

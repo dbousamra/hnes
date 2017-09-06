@@ -1,10 +1,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Emulator.Monad (
-  -- * Types
     MonadEmulator(..)
   , IOEmulator
-  -- * Functions
   , runIOEmulator
 ) where
 

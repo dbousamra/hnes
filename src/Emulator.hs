@@ -1,5 +1,4 @@
 module Emulator (
-  -- * Functions
     run
   , runDebug
   , r
@@ -26,9 +25,7 @@ r :: IO ()
 r = void $ runDebug "roms/nestest.nes" (pure 0xC000)
 
 run :: FilePath -> IO ()
-run fp = do
-  cart <- parseCartridge <$> BS.readFile fp
-  runIOEmulator cart $ void emulate
+run fp = void $ runDebug fp Nothing
 
 runDebug :: FilePath -> Maybe Word16 -> IO [Trace]
 runDebug fp startPc = do
@@ -51,10 +48,7 @@ emulateDebug = go [] where
     opcode <- loadNextOpcode
     trace <- execute opcode
     liftIO $ putStrLn $ renderTrace trace
-    if (length acc) > 0 then
-      pure acc
-    else
-      go (acc ++ [trace])
+    go (acc ++ [trace])
 
 execute :: MonadEmulator m => Opcode -> m Trace
 execute op @ (Opcode _ mn mode) = do

@@ -1,5 +1,4 @@
 module Emulator.Util (
-  -- * Functions
     prettifyWord16
   , prettifyWord8
   , makeW16

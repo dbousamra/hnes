@@ -1,12 +1,9 @@
 module Emulator.Opcode (
-  -- * Types
     Mnemonic(..)
   , AddressMode(..)
   , Opcode(..)
-  -- * Functions
   , instructionLength
   , decodeOpcode
-
 ) where
 
 import           Data.Word

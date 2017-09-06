@@ -1,7 +1,5 @@
 module Emulator.Cartridge (
-  -- * Types
     Cartridge(..)
-  -- * Functions
   , parseCartridge
 ) where
 

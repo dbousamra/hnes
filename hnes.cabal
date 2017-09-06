@@ -14,13 +14,14 @@ extra-source-files:  README.md
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Nes
-                     , Emulator
-                     , Cartridge
-                     , Constants
-                     , Monad
-                     , Opcode
-                     , Util
+  exposed-modules:     Emulator
+                     , Emulator.Nes
+                     , Emulator.Cartridge
+                     , Emulator.Constants
+                     , Emulator.Monad
+                     , Emulator.Opcode
+                     , Emulator.Util
+                     , Emulator.Trace
   -- ghc-options:         -Wall
   build-depends:       base >= 4.7 && < 5
                      , mtl
@@ -30,16 +31,9 @@ library
   default-language:    Haskell2010
 
 executable hnes
-  hs-source-dirs:      src
+  hs-source-dirs:      app
   main-is:             Main.hs
   default-language:    Haskell2010
-  other-modules:       Cartridge
-                     , Constants
-                     , Emulator
-                     , Monad
-                     , Nes
-                     , Opcode
-                     , Util
   ghc-options:        -O2 
                       -rtsopts
   build-depends:       base >= 4.7 && < 5
@@ -54,6 +48,7 @@ test-suite hnes-test
   main-is:             Spec.hs
   build-depends:       base
                      , hnes
+                     , bytestring
                      , parsec
                      , tasty
                      , tasty-hunit
