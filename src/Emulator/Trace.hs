@@ -18,7 +18,10 @@ data Trace = Trace {
   a0 :: Word8,
   a1 :: Word8,
   a2 :: Word8
-} deriving (Eq, Show)
+} deriving (Eq)
+
+instance Show Trace where
+  show = renderTrace
 
 renderTrace :: Trace -> String
 renderTrace (Trace pcv spv av xv yv pv (Opcode _ mnem _) a0 a1 a2) =

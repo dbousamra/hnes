@@ -36,7 +36,7 @@ runDebug fp startPc = do
       Nothing -> pure ()
     emulateDebug
 
-emulate :: MonadEmulator m => m ()
+emulate :: (MonadIO m, MonadEmulator m) => m ()
 emulate = do
   opcode <- loadNextOpcode
   execute opcode
@@ -50,7 +50,7 @@ emulateDebug = go [] where
     liftIO $ putStrLn $ renderTrace trace
     go (acc ++ [trace])
 
-execute :: MonadEmulator m => Opcode -> m Trace
+execute :: (MonadIO m, MonadEmulator m) => Opcode -> m Trace
 execute op @ (Opcode _ mn mode) = do
   addr <- addressForMode mode
   trace <- trace op addr
@@ -93,7 +93,7 @@ addressForMode mode = case mode of
     pure $ toWord16 v
   other -> error $ "Unimplemented AddressMode " ++ (show other)
 
-instructionMapping :: MonadEmulator m => Mnemonic -> (Word16 -> m ())
+instructionMapping :: (MonadIO m, MonadEmulator m) => Mnemonic -> (Word16 -> m ())
 instructionMapping mnemonic = case mnemonic of
   AND     -> and
   BCC     -> bcc
@@ -324,7 +324,7 @@ ora addr = do
   v <- load$ Ram8 addr
   av <- load A
   let newAv = av .|. v
-  store A av
+  store A newAv
   setZN newAv
 
 -- SEC - Set carry flag
