@@ -45,10 +45,11 @@ data Mnemonic
   | RRA | SLO | SRE | ANC | ALR | ARR
   | XAA | AHX | TAS | SHX | SHY | LAS
   | AXS
-    deriving (Show, Eq, Enum)
+    deriving (Show, Read, Eq, Enum)
 
 data Opcode
   = Opcode Word8 Mnemonic AddressMode
+  deriving (Eq)
 
 instance Show Opcode where
   show (Opcode raw mn mode) =
