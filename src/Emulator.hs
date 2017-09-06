@@ -489,4 +489,7 @@ trace op addr = do
   xv  <- load X
   yv  <- load Y
   pv  <- load P
-  pure (Trace pcv spv av xv yv pv op a0 a1 a2)
+  let instrLength = instructionLength op
+      a1R = if instrLength < 2 then 0x0 else a1
+      a2R = if instrLength < 3 then 0x0 else a2
+  pure (Trace pcv spv av xv yv pv op a0 a1R a2R)

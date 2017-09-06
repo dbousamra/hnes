@@ -5,12 +5,12 @@ import           Emulator               (execute, loadNextOpcode)
 import           Emulator.Cartridge
 import           Emulator.Monad
 import           Emulator.Nes           (Address (..))
-import           Emulator.Trace         (renderTrace)
+import           Emulator.Trace         (Trace (..), renderTrace)
+import           Emulator.Util          (prettifyWord16)
 import           Nestest.Parsing        (parseTrace)
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Text.Parsec            (parse)
-
 
 main :: IO ()
 main = defaultMain tests
@@ -32,12 +32,7 @@ nestest = testCase "" $ do
       trace <- execute opcode
       let parsed = parse parseTrace "nestest.log" (head lines)
       case parsed of
-        Left e -> do
-          liftIO $ putStrLn $ show e
-          liftIO $ assertFailure "Failed to parse"
+        Left e -> liftIO $ assertFailure "Failed to parse"
         Right nestestTrace -> do
-
-          liftIO $ putStrLn $ renderTrace nestestTrace
-          liftIO $ putStrLn $ renderTrace trace
-          liftIO $ assertEqual "1 = 1" nestestTrace trace
+          liftIO $ assertEqual ("Execution at " ++ (prettifyWord16 $ pc trace)) nestestTrace trace
           emulate $ tail lines
