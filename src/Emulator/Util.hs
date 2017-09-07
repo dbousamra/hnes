@@ -2,6 +2,7 @@ module Emulator.Util (
     prettifyWord16
   , prettifyWord8
   , makeW16
+  , toWord8
   , toWord16
   , toInt
   , firstNibble
@@ -23,6 +24,9 @@ prettifyWord8 = printf "%02X"
 
 makeW16 :: Word8 -> Word8 -> Word16
 makeW16 lo hi = (toWord16 lo) .|. (toWord16 hi) `shiftL` 8
+
+toWord8 :: Word16 -> Word8
+toWord8 = fromIntegral
 
 toWord16 :: Word8 -> Word16
 toWord16 = fromIntegral

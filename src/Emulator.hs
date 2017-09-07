@@ -64,7 +64,7 @@ loadNextOpcode = do
   pcv <- load (Ram8 pc)
   pure $ decodeOpcode pcv
 
-addressForMode :: MonadEmulator m => AddressMode -> m Word16
+addressForMode :: (MonadIO m, MonadEmulator m) => AddressMode -> m Word16
 addressForMode mode = case mode of
   Absolute -> do
     pcv <- load Pc
@@ -81,6 +81,23 @@ addressForMode mode = case mode of
     pure $ pcv + 1
   Implied ->
     pure 0
+  Indirect -> do
+    pcv <- load Pc
+    addr <- load $ Ram16 (pcv + 1)
+    yo <- read16Bug addr
+    liftIO $ putStrLn (show yo)
+    pure yo
+  IndirectIndexed -> do
+    pcv <- load Pc
+    yv <- load Y
+    v <- load (Ram8 $ pcv + 1)
+    addr <- read16Bug $ toWord16 v
+    pure $ addr + (toWord16 yv)
+  IndexedIndirect -> do
+    pcv <- load Pc
+    xv <- load X
+    v <- load (Ram8 $ pcv + 1)
+    read16Bug $ toWord16 (v + xv)
   Relative -> do
     pcv <- load Pc
     offset16 <- load $ Ram16 (pcv + 1)
@@ -551,6 +568,12 @@ branch cond addr = do
     store Pc addr
   else
     pure ()
+
+read16Bug :: MonadEmulator m => Word16 -> m Word16
+read16Bug addr = do
+  lo <- load $ Ram8 addr
+  hi <- load $ Ram8 $ (addr .&. 0xFF00) .|. (toWord16 $ (toWord8 addr) + 1)
+  pure $ makeW16 lo hi
 
 getFlag :: MonadEmulator m => Flag -> m Bool
 getFlag flag = do
