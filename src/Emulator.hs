@@ -74,11 +74,13 @@ addressForMode mode = case mode of
     xv <- load X
     v <- load $ Ram16 (pcv + 1)
     pure $ v + (toWord16 xv)
+  Accumulator ->
+    pure 0
   Immediate -> do
     pcv <- load Pc
     pure $ pcv + 1
   Implied ->
-    pure $ toWord16 0
+    pure 0
   Relative -> do
     pcv <- load Pc
     offset16 <- load $ Ram16 (pcv + 1)
