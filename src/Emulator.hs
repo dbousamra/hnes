@@ -8,8 +8,8 @@ module Emulator (
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (clearBit, setBit, testBit, xor, (.&.),
-                                         (.|.))
+import           Data.Bits              (clearBit, setBit, shiftR, testBit, xor,
+                                         (.&.), (.|.))
 import qualified Data.ByteString        as BS
 import           Data.Word
 import           Emulator.Cartridge
@@ -51,11 +51,11 @@ emulateDebug = go [] where
     go (acc ++ [trace])
 
 execute :: (MonadIO m, MonadEmulator m) => Opcode -> m Trace
-execute op @ (Opcode _ mn mode) = do
+execute op @ (Opcode _ _ mode) = do
   addr <- addressForMode mode
   trace <- trace op addr
   incrementPc $ instructionLength op
-  instructionMapping mn addr
+  runInstruction op addr
   pure trace
 
 loadNextOpcode :: MonadEmulator m => m Opcode
@@ -95,8 +95,8 @@ addressForMode mode = case mode of
     pure $ toWord16 v
   other -> error $ "Unimplemented AddressMode " ++ (show other)
 
-instructionMapping :: (MonadIO m, MonadEmulator m) => Mnemonic -> (Word16 -> m ())
-instructionMapping mnemonic = case mnemonic of
+runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
+runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   ADC     -> adc
   AND     -> and
   BCC     -> bcc
@@ -127,6 +127,7 @@ instructionMapping mnemonic = case mnemonic of
   LDA     -> lda
   LDX     -> ldx
   LDY     -> ldy
+  LSR     -> lsr mode
   NOP     -> const nop
   PHA     -> const pha
   PHP     -> const php
@@ -342,6 +343,19 @@ ldy addr = do
   v <- load $ Ram8 addr
   store Y v
   setZN v
+
+-- LSR - Logical shift right
+lsr :: (MonadIO m, MonadEmulator m) => AddressMode -> Word16 -> m ()
+lsr mode addr = do
+  av <- load dest
+  setFlag Carry (toEnum . fromIntegral $ av .&. 1)
+  let shiftedAv = av `shiftR` 1
+  store dest shiftedAv
+  setZN shiftedAv
+  where
+    dest = case mode of
+      Accumulator -> A
+      other       -> Ram8 addr
 
 -- NOP - No operation. Do nothing :D
 nop :: MonadEmulator m => m ()
