@@ -113,19 +113,27 @@ instructionMapping mnemonic = case mnemonic of
   CMP     -> cmp
   CPX     -> cpx
   CPY     -> cpy
+  DEC     -> dec
+  DEX     -> const dex
+  DEY     -> const dey
   EOR     -> eor
   INC     -> inc
+  INX     -> const inx
+  INY     -> const iny
   JMP     -> jmp
   JSR     -> jsr
   LDA     -> lda
   LDX     -> ldx
+  LDY     -> ldy
   NOP     -> const nop
   PHA     -> const pha
   PHP     -> const php
   PLA     -> const pla
   PLP     -> const plp
   ORA     -> ora
+  RTI     -> const rti
   RTS     -> const rts
+  SBC     -> sbc
   SEC     -> const sec
   SED     -> const sed
   SEI     -> const sei
@@ -242,6 +250,31 @@ cpy addr = do
   yv <- load Y
   compare yv v
 
+-- DEC - Decrement memory
+dec :: MonadEmulator m => Word16 -> m ()
+dec addr = do
+  v <- load $ Ram8 addr
+  let value = v - 1
+  store (Ram8 addr) value
+  setZN value
+
+-- DEX - Decrement X register
+dex :: MonadEmulator m => m ()
+dex = do
+  v <- load X
+  let value = v - 1
+  store X value
+  setZN value
+
+
+-- DEY - Decrement Y register
+dey :: MonadEmulator m => m ()
+dey = do
+  v <- load Y
+  let value = v - 1
+  store Y value
+  setZN value
+
 -- EOR - Exclusive or
 eor :: MonadEmulator m => Word16 -> m ()
 eor addr = do
@@ -258,6 +291,22 @@ inc addr = do
   v <- load $ Ram8 addr
   let value = v + 1
   store (Ram8 addr) value
+  setZN value
+
+-- INX - Increment X register
+inx :: MonadEmulator m => m ()
+inx  = do
+  v <- load X
+  let value = v + 1
+  store X value
+  setZN value
+
+-- INY - Increment Y register
+iny :: MonadEmulator m => m ()
+iny  = do
+  v <- load Y
+  let value = v + 1
+  store Y value
   setZN value
 
 -- JMP - Move execution to a particular address
@@ -283,6 +332,13 @@ ldx :: MonadEmulator m => Word16 -> m ()
 ldx addr = do
   v <- load $ Ram8 addr
   store X v
+  setZN v
+
+-- LDY - Load Y Register
+ldy :: MonadEmulator m => Word16 -> m ()
+ldy addr = do
+  v <- load $ Ram8 addr
+  store Y v
   setZN v
 
 -- NOP - No operation. Do nothing :D
@@ -314,12 +370,6 @@ pha = do
   av <- load A
   push av
 
--- RTS - Return from a subroutine
-rts :: MonadEmulator m => m ()
-rts = do
-  addr <- pull16
-  store Pc (addr + 1)
-
 -- ORA - Logical Inclusive OR
 ora :: MonadEmulator m => Word16 -> m ()
 ora addr = do
@@ -328,6 +378,34 @@ ora addr = do
   let newAv = av .|. v
   store A newAv
   setZN newAv
+
+-- RTI - Return from interrupt
+rti :: MonadEmulator m => m ()
+rti = do
+  addr <- pull
+  store P (addr .&. 0xEf .|. 0x20)
+  addr' <- pull16
+  store Pc addr'
+
+-- RTS - Return from a subroutine
+rts :: MonadEmulator m => m ()
+rts = do
+  addr <- pull16
+  store Pc (addr + 1)
+
+-- SBC - Subtract with carry
+sbc :: MonadEmulator m => Word16 -> m ()
+sbc addr = do
+  av <- load A
+  bv <- load $ Ram8 addr
+  cv <- (fromIntegral . fromEnum) <$> getFlag Carry
+  store A (av - bv - (1 - cv))
+  av' <- load A
+  setZN av'
+  let shouldCarry = toInt av - toInt bv - (toInt $ 1 - cv) >= 0
+  let doesOverflow = ((av `xor` bv) .&. 0x80) /= 0 && ((av `xor` av') .&. 0x80) /= 0
+  setFlag Carry shouldCarry
+  setFlag Overflow doesOverflow
 
 -- SEC - Set carry flag
 sec :: MonadEmulator m => m ()
