@@ -161,7 +161,7 @@ and addr = do
   setZN av'
 
 -- ADC - Add with carry
-adc :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+adc :: MonadEmulator m => Word16 -> m ()
 adc addr = do
   av <- load A
   bv <- load $ Ram8 addr
@@ -345,7 +345,7 @@ ldy addr = do
   setZN v
 
 -- LSR - Logical shift right
-lsr :: (MonadIO m, MonadEmulator m) => AddressMode -> Word16 -> m ()
+lsr :: MonadEmulator m => AddressMode -> Word16 -> m ()
 lsr mode addr = do
   av <- load dest
   setFlag Carry (toEnum . fromIntegral $ av .&. 1)
