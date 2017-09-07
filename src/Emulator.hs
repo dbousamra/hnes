@@ -8,8 +8,8 @@ module Emulator (
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (clearBit, setBit, shiftR, testBit, xor,
-                                         (.&.), (.|.))
+import           Data.Bits              (clearBit, setBit, shiftL, shiftR,
+                                         testBit, xor, (.&.), (.|.))
 import qualified Data.ByteString        as BS
 import           Data.Word
 import           Emulator.Cartridge
@@ -99,6 +99,7 @@ runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
 runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   ADC     -> adc
   AND     -> and
+  ASL     -> asl mode
   BCC     -> bcc
   BCS     -> bcs
   BEQ     -> beq
@@ -136,6 +137,8 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   ORA     -> ora
   RTI     -> const rti
   RTS     -> const rts
+  ROR     -> ror mode
+  ROL     -> rol mode
   SBC     -> sbc
   SEC     -> const sec
   SED     -> const sed
@@ -151,15 +154,6 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   TYA     -> const tya
   unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
--- AND - Logical and
-and :: MonadEmulator m => Word16 -> m ()
-and addr = do
-  av <- load A
-  v <- load $ Ram8 addr
-  store A (av .&. v)
-  av' <- load A
-  setZN av'
-
 -- ADC - Add with carry
 adc :: MonadEmulator m => Word16 -> m ()
 adc addr = do
@@ -173,6 +167,29 @@ adc addr = do
   let doesOverflow = ((av `xor` bv) .&. 0x80) == 0 && ((av `xor` av') .&. 0x80) /= 0
   setFlag Carry shouldCarry
   setFlag Overflow doesOverflow
+
+-- ASL - Arithmetic shift left
+asl :: MonadEmulator m => AddressMode -> Word16 -> m ()
+asl mode addr = do
+  v <- load dest
+  let i = (v `shiftR` 7) .&. 1
+  setFlag Carry (toEnum . fromIntegral $ i)
+  let shiftedV = v `shiftL` 1
+  store dest shiftedV
+  setZN shiftedV
+  where
+    dest = case mode of
+      Accumulator -> A
+      other       -> Ram8 addr
+
+-- AND - Logical and
+and :: MonadEmulator m => Word16 -> m ()
+and addr = do
+  av <- load A
+  v <- load $ Ram8 addr
+  store A (av .&. v)
+  av' <- load A
+  setZN av'
 
 -- BCC - Branch on carry flag clear
 bcc :: MonadEmulator m => Word16 -> m ()
@@ -347,11 +364,11 @@ ldy addr = do
 -- LSR - Logical shift right
 lsr :: MonadEmulator m => AddressMode -> Word16 -> m ()
 lsr mode addr = do
-  av <- load dest
-  setFlag Carry (toEnum . fromIntegral $ av .&. 1)
-  let shiftedAv = av `shiftR` 1
-  store dest shiftedAv
-  setZN shiftedAv
+  v <- load dest
+  setFlag Carry (toEnum . fromIntegral $ v .&. 1)
+  let shiftedV = v `shiftR` 1
+  store dest shiftedV
+  setZN shiftedV
   where
     dest = case mode of
       Accumulator -> A
@@ -394,6 +411,34 @@ ora addr = do
   let newAv = av .|. v
   store A newAv
   setZN newAv
+
+-- ROL - Rotate left
+rol :: MonadEmulator m => AddressMode -> Word16 -> m ()
+rol mode addr = do
+  v <- load dest
+  cv <- (fromIntegral . fromEnum) <$> getFlag Carry
+  setFlag Carry (toEnum $ fromIntegral $ (v `shiftR` 7) .&. 1)
+  let shiftedV = (v `shiftL` 1) .|. cv
+  store dest shiftedV
+  setZN shiftedV
+  where
+    dest = case mode of
+      Accumulator -> A
+      other       -> Ram8 addr
+
+-- ROR - Rotate right
+ror :: MonadEmulator m => AddressMode -> Word16 -> m ()
+ror mode addr = do
+  v <- load dest
+  cv <- (fromIntegral . fromEnum) <$> getFlag Carry
+  setFlag Carry (toEnum $ fromIntegral $ v .&. 1)
+  let shiftedV = (v `shiftR` 1) .|. (cv `shiftL` 7)
+  store dest shiftedV
+  setZN shiftedV
+  where
+    dest = case mode of
+      Accumulator -> A
+      other       -> Ram8 addr
 
 -- RTI - Return from interrupt
 rti :: MonadEmulator m => m ()
