@@ -3,6 +3,7 @@ module Emulator.Util (
   , prettifyWord8
   , makeW16
   , toWord16
+  , toInt
   , firstNibble
   , splitW16
   , sliceBS
@@ -25,6 +26,9 @@ makeW16 lo hi = (toWord16 lo) .|. (toWord16 hi) `shiftL` 8
 
 toWord16 :: Word8 -> Word16
 toWord16 = fromIntegral
+
+toInt :: Word8 -> Int
+toInt = fromIntegral
 
 splitW16 :: Word16 -> (Word8, Word8)
 splitW16 w = (fromIntegral (w .&. 0xFF), fromIntegral (w `shiftR` 8))

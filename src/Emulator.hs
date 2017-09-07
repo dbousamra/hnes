@@ -95,6 +95,7 @@ addressForMode mode = case mode of
 
 instructionMapping :: (MonadIO m, MonadEmulator m) => Mnemonic -> (Word16 -> m ())
 instructionMapping mnemonic = case mnemonic of
+  ADC     -> adc
   AND     -> and
   BCC     -> bcc
   BCS     -> bcs
@@ -149,17 +150,18 @@ and addr = do
   setZN av'
 
 -- ADC - Add with carry
-adc :: MonadEmulator m => Word16 -> m ()
+adc :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 adc addr = do
   av <- load A
-  v <- load $ Ram8 addr
-  cv <- getFlag Carry
-  -- let newAv = av + v + cv
-  -- store A newAv
-  -- setZN newAv
-
-  undefined
-
+  bv <- load $ Ram8 addr
+  cv <- (fromIntegral . fromEnum) <$> getFlag Carry
+  store A (av + bv + cv)
+  av' <- load A
+  setZN av'
+  let shouldCarry = toInt av + toInt bv + toInt cv > 0xFF
+  let doesOverflow = ((av `xor` bv) .&. 0x80) == 0 && ((av `xor` av') .&. 0x80) /= 0
+  setFlag Carry shouldCarry
+  setFlag Overflow doesOverflow
 
 -- BCC - Branch on carry flag clear
 bcc :: MonadEmulator m => Word16 -> m ()
@@ -247,7 +249,7 @@ eor addr = do
   av <- load A
   let newAv = av `xor` v
   store A newAv
-  setZN av
+  setZN newAv
 
 
 -- INC - Increment memory
