@@ -57,6 +57,7 @@ instance Show Opcode where
 
 instructionLength :: Opcode -> Word16
 instructionLength (Opcode _ mn mode) = case (mode, mn) of
+  (_, JMP)             -> 3
   (Indirect, _)        -> 0
   (Relative, _)        -> 2
   (Accumulator, _)     -> 1

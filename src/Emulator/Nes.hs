@@ -52,8 +52,8 @@ data Address a where
 data Flag
   = Negative
   | Overflow
-  | F1
-  | FB
+  | Unused
+  | Break
   | Decimal
   | Interrupt
   | Zero

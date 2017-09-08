@@ -45,6 +45,7 @@ emulate = do
 emulateDebug :: (MonadIO m, MonadEmulator m) => m [Trace]
 emulateDebug = go [] where
   go acc = do
+    pcv <- load Pc
     opcode <- loadNextOpcode
     trace <- execute opcode
     liftIO $ putStrLn $ renderTrace trace
@@ -90,7 +91,6 @@ addressForMode mode = case mode of
     pcv <- load Pc
     addr <- load $ Ram16 (pcv + 1)
     yo <- read16Bug addr
-    liftIO $ putStrLn (show yo)
     pure yo
   IndirectIndexed -> do
     pcv <- load Pc
@@ -184,7 +184,7 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   TXS     -> const txs
   TYA     -> const tya
   KIL     -> const $ illegal mnemonic
-  LAX     -> const $ illegal mnemonic
+  LAX     -> lax
   SAX     -> const $ illegal mnemonic
   DCP     -> const $ illegal mnemonic
   ISC     -> const $ illegal mnemonic
@@ -203,6 +203,8 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   LAS     -> const $ illegal mnemonic
   AXS     -> const $ illegal mnemonic
   unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
+
+-- Official instructions
 
 -- ADC - Add with carry
 adc :: MonadEmulator m => Word16 -> m ()
@@ -531,8 +533,10 @@ sei :: MonadEmulator m => m ()
 sei = setFlag Interrupt True
 
 -- STA - Store Accumulator register
-sta :: MonadEmulator m => Word16 -> m ()
-sta addr = (load A) >>= (store $ Ram8 addr)
+sta :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+sta addr = do
+  av <- load A
+  store (Ram8 addr) av
 
 -- STX - Store X register
 stx :: MonadEmulator m => Word16 -> m ()
@@ -587,6 +591,16 @@ tya = do
   store A yv
   av <- load A
   setZN av
+
+-- Illegal instructions:
+
+-- LAX: Load Accumulator and X with memory
+lax :: MonadEmulator m => Word16 -> m ()
+lax addr = do
+  v <- load (Ram8 addr)
+  store A v
+  store X v
+  setZN v
 
 incrementPc :: MonadEmulator m => Word16 -> m ()
 incrementPc n = do
@@ -664,15 +678,12 @@ setZN v = setZ v >> setN v
 compare :: MonadEmulator m => Word8 -> Word8 -> m ()
 compare a b = do
   setZN $ a - b
-  if a >= b then
-    setFlag Carry True
-  else
-    setFlag Carry False
+  setFlag Carry (a >= b)
 
 illegal :: (MonadIO m, MonadEmulator m) => Mnemonic -> m ()
 illegal mnemonic = liftIO $ putStrLn $ "illegal opcode" ++ (show mnemonic)
 
-trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
+trace :: (MonadIO m, MonadEmulator m) => Opcode -> Word16 -> m Trace
 trace op addr = do
   pcv <- load Pc
   a0 <- load (Ram8 $ pcv)
