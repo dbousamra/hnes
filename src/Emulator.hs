@@ -185,13 +185,13 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   TYA     -> const tya
   KIL     -> const $ illegal mnemonic
   LAX     -> lax
-  SAX     -> const $ illegal mnemonic
-  DCP     -> const $ illegal mnemonic
-  ISC     -> const $ illegal mnemonic
-  RLA     -> const $ illegal mnemonic
-  RRA     -> const $ illegal mnemonic
-  SLO     -> const $ illegal mnemonic
-  SRE     -> const $ illegal mnemonic
+  SAX     -> sax
+  DCP     -> dcp
+  ISC     -> isc
+  RLA     -> rla mode
+  RRA     -> rra mode
+  SLO     -> slo mode
+  SRE     -> sre mode
   ANC     -> const $ illegal mnemonic
   ALR     -> const $ illegal mnemonic
   ARR     -> const $ illegal mnemonic
@@ -393,7 +393,7 @@ jsr addr = do
   store Pc addr
 
 -- LDA - Load accumulator register
-lda :: MonadEmulator m => Word16 -> m ()
+lda :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 lda addr = do
   v <- load $ Ram8 addr
   store A v
@@ -594,13 +594,49 @@ tya = do
 
 -- Illegal instructions:
 
--- LAX: Load Accumulator and X with memory
+-- LAX - Load Accumulator and X with memory
 lax :: MonadEmulator m => Word16 -> m ()
 lax addr = do
   v <- load (Ram8 addr)
   store A v
   store X v
   setZN v
+
+-- SAX - AND X register with Accumulator and store result in memory
+sax :: MonadEmulator m => Word16 -> m ()
+sax addr = do
+  av <- load A
+  xv <- load X
+  store (Ram8 addr) (av .&. xv)
+
+-- DCP - Subtract 1 from memory
+dcp :: MonadEmulator m => Word16 -> m ()
+dcp addr = dec addr >> cmp addr
+
+-- ISC - INCs the contents of a memory location and then SBCs the result
+-- from the A register.
+isc :: MonadEmulator m => Word16 -> m ()
+isc addr = inc addr >> sbc addr
+
+-- RLA - ROLs the contents of a memory location and then ANDs the result with
+-- the Accumulator.
+rla :: MonadEmulator m => AddressMode -> Word16 -> m ()
+rla mode addr = rol mode addr >> and addr
+
+-- SLO - ASLs the contents of a memory location and then ORs the result
+-- with the Accumulator.
+slo :: MonadEmulator m => AddressMode -> Word16 -> m ()
+slo mode addr = asl mode addr >> ora addr
+
+-- SRE - LSRs the contents of a memory location and then EORs the result with
+-- the Accumulator.
+sre :: MonadEmulator m => AddressMode -> Word16 -> m ()
+sre mode addr = lsr mode addr >> eor addr
+
+-- RRA - RORs the contents of a memory location and then ADCs the result with
+-- the Accumulator
+rra :: MonadEmulator m => AddressMode -> Word16 -> m ()
+rra mode addr = ror mode addr >> adc addr
 
 incrementPc :: MonadEmulator m => Word16 -> m ()
 incrementPc n = do
