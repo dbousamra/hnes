@@ -74,6 +74,11 @@ addressForMode mode = case mode of
     xv <- load X
     v <- load $ Ram16 (pcv + 1)
     pure $ v + (toWord16 xv)
+  AbsoluteY -> do
+    pcv <- load Pc
+    yv <- load Y
+    v <- load $ Ram16 (pcv + 1)
+    pure $ v + (toWord16 yv)
   Accumulator ->
     pure 0
   Immediate -> do
@@ -110,7 +115,16 @@ addressForMode mode = case mode of
     pcv <- load Pc
     v <- load $ Ram8 (pcv + 1)
     pure $ toWord16 v
-  other -> error $ "Unimplemented AddressMode " ++ (show other)
+  ZeroPageX -> do
+    pcv <- load Pc
+    xv <- load X
+    v <- load $ Ram8 (pcv + 1)
+    pure $ toWord16 (v + xv)
+  ZeroPageY -> do
+    pcv <- load Pc
+    yv <- load Y
+    v <- load $ Ram8 (pcv + 1)
+    pure $ toWord16 (v + yv)
 
 runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
 runInstruction (Opcode _ mnemonic mode) = case mnemonic of
@@ -169,6 +183,25 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   TXA     -> txa
   TXS     -> const txs
   TYA     -> const tya
+  KIL     -> const $ illegal mnemonic
+  LAX     -> const $ illegal mnemonic
+  SAX     -> const $ illegal mnemonic
+  DCP     -> const $ illegal mnemonic
+  ISC     -> const $ illegal mnemonic
+  RLA     -> const $ illegal mnemonic
+  RRA     -> const $ illegal mnemonic
+  SLO     -> const $ illegal mnemonic
+  SRE     -> const $ illegal mnemonic
+  ANC     -> const $ illegal mnemonic
+  ALR     -> const $ illegal mnemonic
+  ARR     -> const $ illegal mnemonic
+  XAA     -> const $ illegal mnemonic
+  AHX     -> const $ illegal mnemonic
+  TAS     -> const $ illegal mnemonic
+  SHX     -> const $ illegal mnemonic
+  SHY     -> const $ illegal mnemonic
+  LAS     -> const $ illegal mnemonic
+  AXS     -> const $ illegal mnemonic
   unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
 
 -- ADC - Add with carry
@@ -635,6 +668,9 @@ compare a b = do
     setFlag Carry True
   else
     setFlag Carry False
+
+illegal :: (MonadIO m, MonadEmulator m) => Mnemonic -> m ()
+illegal mnemonic = liftIO $ putStrLn $ "illegal opcode" ++ (show mnemonic)
 
 trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
 trace op addr = do
