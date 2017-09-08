@@ -74,12 +74,12 @@ addressForMode mode = case mode of
     pcv <- load Pc
     xv <- load X
     v <- load $ Ram16 (pcv + 1)
-    pure $ v + (toWord16 xv)
+    pure $ v + toWord16 xv
   AbsoluteY -> do
     pcv <- load Pc
     yv <- load Y
     v <- load $ Ram16 (pcv + 1)
-    pure $ v + (toWord16 yv)
+    pure $ v + toWord16 yv
   Accumulator ->
     pure 0
   Immediate -> do
@@ -97,7 +97,7 @@ addressForMode mode = case mode of
     yv <- load Y
     v <- load (Ram8 $ pcv + 1)
     addr <- read16Bug $ toWord16 v
-    pure $ addr + (toWord16 yv)
+    pure $ addr + toWord16 yv
   IndexedIndirect -> do
     pcv <- load Pc
     xv <- load X
@@ -202,7 +202,7 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   SHY     -> const $ illegal mnemonic
   LAS     -> const $ illegal mnemonic
   AXS     -> const $ illegal mnemonic
-  unknown -> error $ "Unimplemented opcode: " ++ (show unknown)
+  unknown -> error $ "Unimplemented opcode: " ++ show unknown
 
 -- Official instructions
 
@@ -515,7 +515,7 @@ sbc addr = do
   store A (av - bv - (1 - cv))
   av' <- load A
   setZN av'
-  let shouldCarry = toInt av - toInt bv - (toInt $ 1 - cv) >= 0
+  let shouldCarry = toInt av - toInt bv - toInt (1 - cv) >= 0
   let doesOverflow = ((av `xor` bv) .&. 0x80) /= 0 && ((av `xor` av') .&. 0x80) /= 0
   setFlag Carry shouldCarry
   setFlag Overflow doesOverflow

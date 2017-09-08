@@ -51,9 +51,9 @@ data Opcode
 instance Show Opcode where
   show (Opcode raw mn mode) =
     "Opcode: "
-      ++ (prettifyWord8 raw) ++ " "
-      ++ (show mn) ++ " "
-      ++ (show mode)
+      ++ prettifyWord8 raw ++ " "
+      ++ show mn ++ " "
+      ++ show mode
 
 instructionLength :: Opcode -> Word16
 instructionLength (Opcode _ mn mode) = case (mode, mn) of
@@ -74,7 +74,7 @@ instructionLength (Opcode _ mn mode) = case (mode, mn) of
 
 -- see https://github.com/blitzcode/neskell
 decodeOpcode :: Word8 -> Opcode
-decodeOpcode w = (Opcode w mnemonic addressMode)
+decodeOpcode w = Opcode w mnemonic addressMode
   where
     (mnemonic, addressMode) = case w of
       0x69 -> (ADC, Immediate)       ; 0x65 -> (ADC, ZeroPage)        ; 0x75 -> (ADC, ZeroPageX)
@@ -164,5 +164,5 @@ decodeOpcode w = (Opcode w mnemonic addressMode)
       0x6B -> (ARR, Immediate)       ; 0x8B -> (XAA, Immediate)       ; 0x93 -> (AHX, IndirectIndexed)
       0x9F -> (AHX, AbsoluteY)       ; 0x9B -> (TAS, AbsoluteY)       ; 0x9E -> (SHX, AbsoluteY)
       0x9C -> (SHY, AbsoluteX)       ; 0xBB -> (LAS, AbsoluteY)       ; 0xCB -> (AXS, Immediate)
-      other -> error $ (show other) ++ " is not a known opcode"
+      other -> error $ show other ++ " is not a known opcode"
 

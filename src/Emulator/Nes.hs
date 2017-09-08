@@ -118,10 +118,10 @@ storeRam8 nes r v
   | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.write (ram nes) (addr `mod` 0x07FF) v
   | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU write not implemented!"
   | r >= ppuMirrorsBegin  && r <= ppuMirrorsEnd = error "PPU write not implemented!"
-  | r >= ioRegistersBegin && r <= ioRegistersEnd = error "IO write not implemented!"
+  | r >= ioRegistersBegin && r <= ioRegistersEnd = pure ()
   | r >= cartSpaceBegin   && r <= cartSpaceEnd = error "Cannot write to cart space"
   | otherwise = error "Erroneous write detected!"
-  where addr = (fromIntegral r)
+  where addr = fromIntegral r
 
 storeRam16 :: Nes s -> Word16 -> Word16 -> ST s ()
 storeRam16 nes r v = do
@@ -140,6 +140,6 @@ mapper0 cart = Mapper cart readRom where
     | otherwise = error $ "Erroneous mapper0 read detected!: " ++ prettifyWord16 r
     where
       addr = fromIntegral r
-      prgBanks = (BS.length (prgRom cart)) `div` 0x4000
+      prgBanks = BS.length (prgRom cart) `div` 0x4000
       prgBank1 = 0
       prgBank2 = prgBanks - 1

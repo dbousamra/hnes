@@ -19,7 +19,7 @@ tests :: TestTree
 tests = testGroup "Tests" [nestest]
 
 nestest :: TestTree
-nestest = testCase "" $ do
+nestest = testCase "nestest" $ do
   cart <- parseCartridge <$> BS.readFile "roms/nestest.nes"
   lines <- lines <$> readFile "roms/nestest.log"
   runIOEmulator cart $ do
@@ -30,9 +30,10 @@ nestest = testCase "" $ do
     emulate lines = do
       opcode <- loadNextOpcode
       trace <- execute opcode
-      let parsed = parse parseTrace "nestest.log" (head lines)
-      case parsed of
-        Left e -> liftIO $ assertFailure "Failed to parse"
-        Right nestestTrace -> do
-          liftIO $ assertEqual ("Execution at " ++ (prettifyWord16 $ pc trace)) nestestTrace trace
-          emulate $ tail lines
+      case lines of
+        [] -> pure ()
+        (x:xs) -> case parse parseTrace "nestest.log" (head lines) of
+          Left e -> liftIO $ assertFailure $ "Failed to parse " ++ show e
+          Right nestestTrace -> do
+            liftIO $ assertEqual ("Execution at " ++ (prettifyWord16 $ pc trace)) nestestTrace trace
+            emulate $ tail lines
