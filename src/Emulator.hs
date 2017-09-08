@@ -138,6 +138,7 @@ runInstruction (Opcode _ mnemonic mode) = case mnemonic of
   BMI     -> bmi
   BNE     -> bne
   BPL     -> bpl
+  BRK     -> brk
   BVC     -> bvc
   BVS     -> bvs
   CLC     -> const clc
@@ -270,6 +271,16 @@ bvc = branch $ not <$> getFlag Overflow
 -- BVS - Branch if overflow set
 bvs :: MonadEmulator m => Word16 -> m ()
 bvs = branch $ getFlag Overflow
+
+-- BRK - Force interrupt
+brk :: MonadEmulator m => Word16 -> m ()
+brk addr = do
+  pcv <- load Pc
+  push16 pcv
+  php
+  sei
+  av <- load (Ram16 0xFFFE)
+  store Pc av
 
 -- BIT - Test Bits in memory with A
 bit :: MonadEmulator m => Word16 -> m ()
