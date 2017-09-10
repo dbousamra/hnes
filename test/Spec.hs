@@ -32,8 +32,8 @@ nestest = testCase "nestest" $ do
       trace <- execute opcode
       case lines of
         [] -> pure ()
-        (x:xs) -> case parse parseTrace "nestest.log" (head lines) of
+        (x:xs) -> case parse parseTrace "nestest.log" x of
           Left e -> liftIO $ assertFailure $ "Failed to parse " ++ show e
           Right nestestTrace -> do
             liftIO $ assertEqual ("Execution at " ++ (prettifyWord16 $ pc trace)) nestestTrace trace
-            emulate $ tail lines
+            emulate xs

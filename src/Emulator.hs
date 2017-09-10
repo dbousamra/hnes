@@ -22,7 +22,7 @@ import           Prelude                hiding (and, compare)
 import           Text.Printf            (printf)
 
 r :: IO ()
-r = void $ runDebug "roms/nestest.nes" (pure 0xC000)
+r = void $ runDebug "roms/Balloon_fight.nes" Nothing
 
 run :: FilePath -> IO ()
 run fp = void $ runDebug fp Nothing
@@ -33,7 +33,7 @@ runDebug fp startPc = do
   runIOEmulator cart $ do
     case startPc of
       Just v  -> store Pc v
-      Nothing -> pure ()
+      Nothing -> reset
     emulateDebug
 
 emulate :: (MonadIO m, MonadEmulator m) => m ()
@@ -58,6 +58,13 @@ execute op @ (Opcode _ _ mode) = do
   incrementPc $ instructionLength op
   runInstruction op addr
   pure trace
+
+reset :: MonadEmulator m => m ()
+reset = do
+  v <- load (Ram16 0xFFFC)
+  store Pc v
+  store Sp 0xFD
+  store P 0x24
 
 loadNextOpcode :: MonadEmulator m => m Opcode
 loadNextOpcode = do
@@ -128,82 +135,81 @@ addressForMode mode = case mode of
 
 runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
 runInstruction (Opcode _ mnemonic mode) = case mnemonic of
-  ADC     -> adc
-  AND     -> and
-  ASL     -> asl mode
-  BCC     -> bcc
-  BCS     -> bcs
-  BEQ     -> beq
-  BIT     -> bit
-  BMI     -> bmi
-  BNE     -> bne
-  BPL     -> bpl
-  BRK     -> brk
-  BVC     -> bvc
-  BVS     -> bvs
-  CLC     -> const clc
-  CLD     -> const cld
-  CLI     -> const cli
-  CLV     -> const clv
-  CMP     -> cmp
-  CPX     -> cpx
-  CPY     -> cpy
-  DEC     -> dec
-  DEX     -> const dex
-  DEY     -> const dey
-  EOR     -> eor
-  INC     -> inc
-  INX     -> const inx
-  INY     -> const iny
-  JMP     -> jmp
-  JSR     -> jsr
-  LDA     -> lda
-  LDX     -> ldx
-  LDY     -> ldy
-  LSR     -> lsr mode
-  NOP     -> const nop
-  PHA     -> const pha
-  PHP     -> const php
-  PLA     -> const pla
-  PLP     -> const plp
-  ORA     -> ora
-  RTI     -> const rti
-  RTS     -> const rts
-  ROR     -> ror mode
-  ROL     -> rol mode
-  SBC     -> sbc
-  SEC     -> const sec
-  SED     -> const sed
-  SEI     -> const sei
-  STA     -> sta
-  STX     -> stx
-  STY     -> sty
-  TAX     -> tax
-  TAY     -> tay
-  TSX     -> tsx
-  TXA     -> txa
-  TXS     -> const txs
-  TYA     -> const tya
-  KIL     -> const $ illegal mnemonic
-  LAX     -> lax
-  SAX     -> sax
-  DCP     -> dcp
-  ISC     -> isc
-  RLA     -> rla mode
-  RRA     -> rra mode
-  SLO     -> slo mode
-  SRE     -> sre mode
-  ANC     -> const $ illegal mnemonic
-  ALR     -> const $ illegal mnemonic
-  ARR     -> const $ illegal mnemonic
-  XAA     -> const $ illegal mnemonic
-  AHX     -> const $ illegal mnemonic
-  TAS     -> const $ illegal mnemonic
-  SHX     -> const $ illegal mnemonic
-  SHY     -> const $ illegal mnemonic
-  LAS     -> const $ illegal mnemonic
-  AXS     -> const $ illegal mnemonic
-  unknown -> error $ "Unimplemented opcode: " ++ show unknown
+  ADC -> adc
+  AND -> and
+  ASL -> asl mode
+  BCC -> bcc
+  BCS -> bcs
+  BEQ -> beq
+  BIT -> bit
+  BMI -> bmi
+  BNE -> bne
+  BPL -> bpl
+  BRK -> brk
+  BVC -> bvc
+  BVS -> bvs
+  CLC -> const clc
+  CLD -> const cld
+  CLI -> const cli
+  CLV -> const clv
+  CMP -> cmp
+  CPX -> cpx
+  CPY -> cpy
+  DEC -> dec
+  DEX -> const dex
+  DEY -> const dey
+  EOR -> eor
+  INC -> inc
+  INX -> const inx
+  INY -> const iny
+  JMP -> jmp
+  JSR -> jsr
+  LDA -> lda
+  LDX -> ldx
+  LDY -> ldy
+  LSR -> lsr mode
+  NOP -> const nop
+  PHA -> const pha
+  PHP -> const php
+  PLA -> const pla
+  PLP -> const plp
+  ORA -> ora
+  RTI -> const rti
+  RTS -> const rts
+  ROR -> ror mode
+  ROL -> rol mode
+  SBC -> sbc
+  SEC -> const sec
+  SED -> const sed
+  SEI -> const sei
+  STA -> sta
+  STX -> stx
+  STY -> sty
+  TAX -> tax
+  TAY -> tay
+  TSX -> tsx
+  TXA -> txa
+  TXS -> const txs
+  TYA -> const tya
+  KIL -> const $ illegal mnemonic
+  LAX -> lax
+  SAX -> sax
+  DCP -> dcp
+  ISC -> isc
+  RLA -> rla mode
+  RRA -> rra mode
+  SLO -> slo mode
+  SRE -> sre mode
+  ANC -> const $ illegal mnemonic
+  ALR -> const $ illegal mnemonic
+  ARR -> const $ illegal mnemonic
+  XAA -> const $ illegal mnemonic
+  AHX -> const $ illegal mnemonic
+  TAS -> const $ illegal mnemonic
+  SHX -> const $ illegal mnemonic
+  SHY -> const $ illegal mnemonic
+  LAS -> const $ illegal mnemonic
+  AXS -> const $ illegal mnemonic
 
 -- Official instructions
 
