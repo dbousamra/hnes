@@ -10,25 +10,21 @@ module Emulator.Nes (
 ) where
 
 import           Control.Monad.ST
-import           Data.Bits                   (clearBit, setBit, testBit, (.&.))
+import           Data.Bits                   ((.&.))
 import qualified Data.ByteString             as BS
-import           Data.STRef                  (STRef, modifySTRef', newSTRef,
-                                              readSTRef)
+import           Data.STRef
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
 import           Emulator.Cartridge
-import           Emulator.Constants
+import           Emulator.Mapper
+import           Emulator.PPU                as PPU
 import           Emulator.Util
 import           Prelude                     hiding (replicate)
 
-data Mapper s = Mapper {
-  cart    :: Cartridge,
-  readRom :: Word16 -> Word8
-}
-
 data Nes s = Nes {
   ram    :: VUM.MVector s Word8,
-  mapper :: Mapper      s,
+  mapper :: Mapper,
+  ppu    :: PPU s,
   pc     :: STRef       s Word16,
   sp     :: STRef       s Word8,
   a      :: STRef       s Word8,
@@ -44,7 +40,6 @@ data Address a where
   A     :: Address Word8
   X     :: Address Word8
   Y     :: Address Word8
-  -- P     :: Flag -> Address Bool
   P     :: Address Word8
   Ram8  :: Word16 -> Address Word8
   Ram16 :: Word16 -> Address Word16
@@ -63,6 +58,7 @@ data Flag
 new :: Cartridge -> ST s (Nes s)
 new cart = do
   let mapper = mapper0 cart
+  ppu <- newPPU
   ram <- VUM.replicate 65536 0x0
   pc <- newSTRef 0x0
   sp <- newSTRef 0xFD
@@ -70,7 +66,7 @@ new cart = do
   x <- newSTRef 0x0
   y <- newSTRef 0x0
   p <- newSTRef 0x24 -- should this be 0x34?
-  pure $ Nes ram mapper pc sp a x y p
+  pure $ Nes ram mapper ppu pc sp a x y p
 
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
@@ -85,14 +81,12 @@ load nes addr = case addr of
 
 loadRam8 :: Nes s -> Word16 -> ST s Word8
 loadRam8 nes r
-  | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.read (ram nes) addr
-  | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.read (ram nes) (addr .&. 0x07FF)
-  | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU read not implemented!"
-  | r >= ppuMirrorsBegin  && r <= ppuMirrorsEnd = error "PPU read not implemented!"
-  | r >= ioRegistersBegin && r <= ioRegistersEnd = error "IO read not implemented!"
-  | r >= cartSpaceBegin   && r <= cartSpaceEnd = pure $ readRom (mapper nes) r
+  | r < 0x2000 = VUM.read (ram nes) (fromIntegral r `mod` 0x0800)
+  | r < 0x4000 = PPU.read (ppu nes) r
+  | r >= 0x2008 && r <= 0x3FFF = error "PPU read not implemented!"
+  | r >= 0x4000 && r <= 0x4017 = error "IO read not implemented!"
+  | r >= 0x6000 && r <= 0xFFFF = pure $ readRom (mapper nes) r
   | otherwise = error "Erroneous read detected!"
-  where addr = fromIntegral r
 
 loadRam16 :: Nes s -> Word16 -> ST s Word16
 loadRam16 nes r = do
@@ -114,14 +108,12 @@ store nes addr v = case addr of
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v
-  | r >= cpuRamBegin      && r <= cpuRamEnd = VUM.write (ram nes) addr v
-  | r >= ramMirrorsBegin  && r <= ramMirrorsEnd = VUM.write (ram nes) (addr `mod` 0x07FF) v
-  | r >= ppuRegisterBegin && r <= ppuRegisterEnd = error "PPU write not implemented!"
-  | r >= ppuMirrorsBegin  && r <= ppuMirrorsEnd = error "PPU write not implemented!"
-  | r >= ioRegistersBegin && r <= ioRegistersEnd = pure ()
-  | r >= cartSpaceBegin   && r <= cartSpaceEnd = error "Cannot write to cart space"
+  | r < 0x2000 = VUM.write (ram nes) (fromIntegral r `mod` 0x0800) v
+  | r < 0x4000 = PPU.write (ppu nes) (0x2000 + r `mod` 8) v
+  | r >= 0x2008 && r <= 0x3FFF = error "PPU write not implemented!"
+  | r >= 0x4000 && r <= 0x4017 = pure ()
+  | r >= 0x4020 && r <= 0xFFFF = error "Cannot write to cart space"
   | otherwise = error "Erroneous write detected!"
-  where addr = fromIntegral r
 
 storeRam16 :: Nes s -> Word16 -> Word16 -> ST s ()
 storeRam16 nes r v = do
@@ -129,17 +121,3 @@ storeRam16 nes r v = do
   let (lo, hi) = splitW16 v
   store nes (Ram8 addr) lo
   store nes (Ram8 $ addr + 1) hi
-
-mapper0 :: Cartridge -> Mapper s
-mapper0 cart = Mapper cart readRom where
-  readRom r
-    | addr <  0x2000 = BS.index (chrRom cart) addr
-    | addr >= 0xC000 = BS.index (prgRom cart) ((prgBank2 * 0x4000) + (addr - 0xC000))
-    | addr >= 0x8000 = BS.index (prgRom cart) ((prgBank1 * 0x4000) + (addr - 0x8000))
-    | addr >= 0x6000 = BS.index (prgRom cart) (addr - 0x6000)
-    | otherwise = error $ "Erroneous mapper0 read detected!: " ++ prettifyWord16 r
-    where
-      addr = fromIntegral r
-      prgBanks = BS.length (prgRom cart) `div` 0x4000
-      prgBank1 = 0
-      prgBank2 = prgBanks - 1
