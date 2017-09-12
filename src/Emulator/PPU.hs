@@ -14,13 +14,6 @@ import           Debug.Trace
 import           Emulator.Util
 import           Prelude          hiding (read)
 
-data ControlFlag
-  = VBlank
-  | SpriteHit
-  | SpriteOverflow
-  deriving (Enum)
-
-
 data PPU s = PPU {
   control :: STRef       s Word8
 }
@@ -36,19 +29,18 @@ write :: PPU s -> Word16 -> Word8 -> ST s ()
 write ppu addr v = case addr of
   0x2000 -> writeControl ppu addr v
   0x2001 -> writeMask ppu addr v
-  other  -> error $ "Unsupported write to PPU addr " ++ prettifyWord16 addr
-
-writeControl :: PPU s -> Word16 -> Word8 -> ST s ()
-writeControl ppu addr v = pure ()
-
-writeMask :: PPU s -> Word16 -> Word8 -> ST s ()
-writeMask ppu addr v = pure ()
 
 read :: PPU s -> Word16 -> ST s Word8
 read ppu addr = case addr of
   0x2002 -> readStatus ppu
   0x2004 -> readOAM ppu
   0x2007 -> readMemory ppu
+
+writeControl :: PPU s -> Word16 -> Word8 -> ST s ()
+writeControl ppu addr v = error $ "Unsupported PPU writeControl"
+
+writeMask :: PPU s -> Word16 -> Word8 -> ST s ()
+writeMask ppu addr v = error $ "Unsupported PPU writeMask"
 
 readStatus :: PPU s -> ST s Word8
 readStatus ppu = error $ "Unsupported PPU readStatus"
