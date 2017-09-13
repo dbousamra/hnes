@@ -14,15 +14,48 @@ import           Debug.Trace
 import           Emulator.Util
 import           Prelude          hiding (read)
 
-data PPU s = PPU {
-  control :: STRef       s Word8
+data NameTableAddr
+  = NameTable2000
+  | NameTable2400
+  | NameTable2800
+  | NameTable2C00
+
+data IncrementMode
+  = Horizontal
+  | Vertical
+
+data SpriteTableAddr
+  = SpriteTable0000
+  | SpriteTable1000
+
+data BackgroundTableAddr
+  = BackgroundTable0000
+  | BackgroundTable1000
+
+data SpriteSize
+  = Normal
+  | Double
+
+data NMIEnabled
+  = Off
+  | On
+
+data ControlRegister = ControlRegister {
+  nameTable       :: NameTableAddr,
+  incrementMode   :: IncrementMode,
+  spriteTable     :: SpriteTableAddr,
+  backgroundTable :: BackgroundTableAddr,
+  spriteSize      :: SpriteSize,
+  nmiEnabled      :: NMIEnabled
 }
-data Address a where
-  Control :: Address Word8
+
+data PPU s = PPU {
+  control :: STRef s ControlRegister
+}
 
 newPPU :: ST s (PPU s)
 newPPU = do
-  control <- newSTRef 0x0
+  control <- newSTRef resetControlRegister
   pure $ PPU control
 
 write :: PPU s -> Word16 -> Word8 -> ST s ()
@@ -50,3 +83,14 @@ readOAM ppu = error $ "Unsupported PPU readOAM"
 
 readMemory :: PPU s -> ST s Word8
 readMemory ppu = error $ "Unsupported PPU readMemory "
+
+resetControlRegister :: ControlRegister
+resetControlRegister =
+  ControlRegister {
+    nameTable = NameTable2000,
+    incrementMode = Horizontal,
+    spriteTable = SpriteTable0000,
+    backgroundTable = BackgroundTable0000,
+    spriteSize = Normal,
+    nmiEnabled = Off
+  }
