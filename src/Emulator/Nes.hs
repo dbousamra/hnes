@@ -36,14 +36,9 @@ new cart = do
 
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
-  Pc        -> readSTRef $ (pc . cpu) nes
-  Sp        -> readSTRef $ (sp . cpu) nes
-  A         -> readSTRef $ (a . cpu) nes
-  X         -> readSTRef $ (x . cpu) nes
-  Y         -> readSTRef $ (y . cpu) nes
-  P         -> readSTRef $ (p . cpu) nes
-  (Ram8 r)  -> loadRam8 nes r
-  (Ram16 r) -> loadRam16 nes r
+  (CpuAddress r) -> CPU.read (cpu nes) r
+  (Ram8 r)       -> loadRam8 nes r
+  (Ram16 r)      -> loadRam16 nes r
 
 loadRam8 :: Nes s -> Word16 -> ST s Word8
 loadRam8 nes addr
@@ -61,14 +56,9 @@ loadRam16 nes addr = do
 
 store :: Nes s -> Address a -> a -> ST s ()
 store nes addr v = case addr of
-  Pc        -> modifySTRef' ((pc . cpu) nes) (const v)
-  Sp        -> modifySTRef' ((sp . cpu) nes) (const v)
-  A         -> modifySTRef' ((a . cpu) nes) (const v)
-  X         -> modifySTRef' ((x . cpu) nes) (const v)
-  Y         -> modifySTRef' ((y . cpu) nes) (const v)
-  P         -> modifySTRef' ((p . cpu) nes) (const v)
-  (Ram8 r)  -> storeRam8 nes r v
-  (Ram16 r) -> storeRam16 nes r v
+  (CpuAddress r) -> CPU.write (cpu nes) r v
+  (Ram8 r)       -> storeRam8 nes r v
+  (Ram16 r)      -> storeRam16 nes r v
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v
