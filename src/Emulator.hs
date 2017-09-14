@@ -11,9 +11,9 @@ import           Control.Monad.IO.Class
 import           Data.Bits              hiding (bit)
 import qualified Data.ByteString        as BS
 import           Data.Word
+import           Emulator.Address
 import           Emulator.Cartridge
 import           Emulator.Monad
-import           Emulator.Nes           (Address (..), Flag (..))
 import           Emulator.Opcode
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util

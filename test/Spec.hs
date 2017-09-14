@@ -2,9 +2,9 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Emulator               (execute, loadNextOpcode)
+import           Emulator.Address
 import           Emulator.Cartridge
 import           Emulator.Monad
-import           Emulator.Nes           (Address (..))
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util          (prettifyWord16)
 import           Nestest.Parsing        (parseTrace)

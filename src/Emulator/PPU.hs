@@ -3,6 +3,7 @@
 module Emulator.PPU (
     PPU(..)
   , newPPU
+  , step
   , write
   , read
 ) where
@@ -73,15 +74,18 @@ write :: PPU s -> Word16 -> Word8 -> ST s ()
 write ppu addr v = do
   status <- readStatus ppu
   let newStatus = status { lastWrite = v }
-  case addr of
+  case (0x2000 + addr `mod` 8) of
     0x2000 -> writeControl ppu v
     0x2001 -> writeMask ppu v
 
 read :: PPU s -> Word16 -> ST s Word8
-read ppu addr = case addr of
+read ppu addr = case (0x2000 + addr `mod` 8) of
   0x2002 -> statusToWord8 <$> readStatus ppu
   0x2004 -> readOAM ppu
   0x2007 -> readMemory ppu
+
+step :: PPU s -> ST s (PPU s)
+step = pure
 
 writeControl :: PPU s -> Word8 -> ST s ()
 writeControl ppu v = modifySTRef' (controlRegister ppu) (const cr)

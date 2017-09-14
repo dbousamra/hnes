@@ -9,6 +9,7 @@ module Emulator.Monad (
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.ST     (RealWorld, stToIO)
 import           Control.Monad.Trans  (MonadIO, lift)
+import           Emulator.Address
 import           Emulator.Cartridge
 import           Emulator.Nes         as Nes
 
