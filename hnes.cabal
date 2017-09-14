@@ -17,6 +17,8 @@ library
   exposed-modules:     Emulator
                      , Emulator.Nes
                      , Emulator.Cartridge
+                     , Emulator.Mapper
+                     , Emulator.PPU
                      , Emulator.Monad
                      , Emulator.Opcode
                      , Emulator.Util

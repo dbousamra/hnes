@@ -8,8 +8,7 @@ module Emulator (
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (clearBit, setBit, shiftL, shiftR,
-                                         testBit, xor, (.&.), (.|.))
+import           Data.Bits              hiding (bit)
 import qualified Data.ByteString        as BS
 import           Data.Word
 import           Emulator.Cartridge
@@ -22,7 +21,7 @@ import           Prelude                hiding (and, compare)
 import           Text.Printf            (printf)
 
 r :: IO ()
-r = void $ runDebug "roms/Balloon_fight.nes" Nothing
+r = void $ runDebug "roms/color_test.nes" Nothing
 
 run :: FilePath -> IO ()
 run fp = void $ runDebug fp Nothing
@@ -661,7 +660,7 @@ incrementPc n = do
   store Pc (pc + n)
 
 -- Moves execution to addr if condition is set
-branch :: MonadEmulator m => (m Bool) -> Word16 -> m ()
+branch :: MonadEmulator m => m Bool -> Word16 -> m ()
 branch cond addr = do
   c <- cond
   if c then

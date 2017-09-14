@@ -16,21 +16,17 @@ import           Data.STRef
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
 import           Emulator.Cartridge
+import           Emulator.CPU                as CPU
 import           Emulator.Mapper
 import           Emulator.PPU                as PPU
 import           Emulator.Util
 import           Prelude                     hiding (replicate)
 
 data Nes s = Nes {
-  ram    :: VUM.MVector s Word8,
-  mapper :: Mapper,
+  cpu    :: CPU s,
   ppu    :: PPU s,
-  pc     :: STRef       s Word16,
-  sp     :: STRef       s Word8,
-  a      :: STRef       s Word8,
-  x      :: STRef       s Word8,
-  y      :: STRef       s Word8,
-  p      :: STRef       s Word8
+  ram    :: VUM.MVector s Word8,
+  mapper :: Mapper
 }
 
 -- GADTs are used to represent addressing
@@ -57,25 +53,20 @@ data Flag
 
 new :: Cartridge -> ST s (Nes s)
 new cart = do
-  let mapper = mapper0 cart
+  mapper <- pure $ mapper0 cart
+  cpu <- newCPU
   ppu <- newPPU
   ram <- VUM.replicate 65536 0x0
-  pc <- newSTRef 0x0
-  sp <- newSTRef 0xFD
-  a <- newSTRef 0x0
-  x <- newSTRef 0x0
-  y <- newSTRef 0x0
-  p <- newSTRef 0x24 -- should this be 0x34?
-  pure $ Nes ram mapper ppu pc sp a x y p
+  pure $ Nes cpu ppu ram mapper
 
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
-  Pc        -> readSTRef (pc nes)
-  Sp        -> readSTRef (sp nes)
-  A         -> readSTRef (a nes)
-  X         -> readSTRef (x nes)
-  Y         -> readSTRef (y nes)
-  P         -> readSTRef (p nes)
+  Pc        -> readSTRef $ (pc . cpu) nes
+  Sp        -> readSTRef $ (sp . cpu) nes
+  A         -> readSTRef $ (a . cpu) nes
+  X         -> readSTRef $ (x . cpu) nes
+  Y         -> readSTRef $ (y . cpu) nes
+  P         -> readSTRef $ (p . cpu) nes
   (Ram8 r)  -> loadRam8 nes r
   (Ram16 r) -> loadRam16 nes r
 
@@ -97,12 +88,12 @@ loadRam16 nes r = do
 
 store :: Nes s -> Address a -> a -> ST s ()
 store nes addr v = case addr of
-  Pc        -> modifySTRef' (pc nes) (const v)
-  Sp        -> modifySTRef' (sp nes) (const v)
-  A         -> modifySTRef' (a nes) (const v)
-  X         -> modifySTRef' (x nes) (const v)
-  Y         -> modifySTRef' (y nes) (const v)
-  P         -> modifySTRef' (p nes) (const v)
+  Pc        -> modifySTRef' ((pc . cpu) nes) (const v)
+  Sp        -> modifySTRef' ((sp . cpu) nes) (const v)
+  A         -> modifySTRef' ((a . cpu) nes) (const v)
+  X         -> modifySTRef' ((x . cpu) nes) (const v)
+  Y         -> modifySTRef' ((y . cpu) nes) (const v)
+  P         -> modifySTRef' ((p . cpu) nes) (const v)
   (Ram8 r)  -> storeRam8 nes r v
   (Ram16 r) -> storeRam16 nes r v
 
