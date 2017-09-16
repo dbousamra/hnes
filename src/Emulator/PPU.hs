@@ -110,6 +110,11 @@ writeRegister :: PPU s -> Word16 -> Word8 -> ST s ()
 writeRegister ppu addr v = case (0x2000 + addr `mod` 8) of
     0x2000 -> writeControl ppu v
     0x2001 -> writeMask ppu v
+    0x2003 -> writeOAMAddress ppu v
+    0x2004 -> writeOAMData ppu v
+    0x2005 -> writeScroll ppu v
+    0x2006 -> writeAddress ppu v
+    0x2007 -> writeDMA ppu v
 
 readRegister :: PPU s -> Word16 -> ST s Word8
 readRegister ppu addr = case (0x2000 + addr `mod` 8) of
@@ -158,6 +163,21 @@ writeMask ppu v = do
   modifySTRef' (intensifyReds ppu) $ const $ testBit v 5
   modifySTRef' (intensifyGreens ppu) $ const $ testBit v 6
   modifySTRef' (intensifyBlues ppu) $ const $ testBit v 7
+
+writeOAMAddress :: PPU s -> Word8 -> ST s ()
+writeOAMAddress ppu v = error $ "Unimplemented writeOAMAddress at " ++ prettifyWord8 v
+
+writeOAMData :: PPU s -> Word8 -> ST s ()
+writeOAMData ppu v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
+
+writeScroll :: PPU s -> Word8 -> ST s ()
+writeScroll ppu v = error $ "Unimplemented writeScroll at " ++ prettifyWord8 v
+
+writeAddress :: PPU s -> Word8 -> ST s ()
+writeAddress ppu v = error $ "Unimplemented writeAddress at " ++ prettifyWord8 v
+
+writeDMA :: PPU s -> Word8 -> ST s ()
+writeDMA ppu v = error $ "Unimplemented writeDMA at " ++ prettifyWord8 v
 
 readStatus :: PPU s -> ST s Word8
 readStatus ppu = do

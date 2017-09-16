@@ -131,7 +131,6 @@ incrementPc opcode = modify (CpuAddress Pc) (+  (fromIntegral $ (len opcode)))
 
 incrementCycles :: (MonadIO m, MonadEmulator m) => Opcode -> Bool -> m Int
 incrementCycles opcode pageCrossed = do
-  liftIO $ putStrLn ("Total cycles for " ++ (show opcode) ++ " is " ++ (show cyclesToIncrementBy))
   modify (CpuAddress CpuCycles) (+ fromIntegral cyclesToIncrementBy)
   pure cyclesToIncrementBy
   where
