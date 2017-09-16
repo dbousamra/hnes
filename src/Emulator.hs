@@ -15,13 +15,14 @@ import           Emulator.Cartridge
 import qualified Emulator.CPU.Execution as CPU
 import           Emulator.Monad
 import           Emulator.Opcode
+import qualified Emulator.PPU.Execution as PPU
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
 import           Prelude                hiding (and, compare)
 import           Text.Printf            (printf)
 
 r :: IO ()
-r = void $ runDebug "roms/color_test.nes" Nothing
+r = void $ runDebug "roms/nestest.nes" (pure 0xC000)
 
 run :: FilePath -> IO ()
 run fp = void $ runDebug fp Nothing
@@ -33,20 +34,24 @@ runDebug fp startPc = do
     case startPc of
       Just v  -> store (CpuAddress Pc) v
       Nothing -> reset
-    emulateDebug
+    emulateDebug 10
 
-emulate :: MonadEmulator m => m ()
+emulate :: (MonadIO m, MonadEmulator m) => m ()
 emulate = step >> emulate
 
-emulateDebug :: (MonadIO m, MonadEmulator m) => m [Trace]
-emulateDebug = go [] where
-  go acc = do
+emulateDebug :: (MonadIO m, MonadEmulator m) => Int -> m [Trace]
+emulateDebug n = go 0 n [] where
+  go c n acc = do
     trace <- step
     liftIO $ putStrLn $ renderTrace trace
-    go (acc ++ [trace])
+    if c > n then pure acc
+    else go (c + 1) n (acc ++ [trace])
 
-step :: MonadEmulator m => m Trace
-step = CPU.step
+step :: (MonadIO m, MonadEmulator m) => m Trace
+step = do
+  trace <- CPU.step
+  _ <- PPU.step
+  pure trace
 
 reset :: MonadEmulator m => m ()
 reset = CPU.reset

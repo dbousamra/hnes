@@ -37,13 +37,14 @@ new cart = do
 load :: Nes s -> Address a -> ST s a
 load nes addr = case addr of
   (CpuAddress r) -> CPU.read (cpu nes) r
+  (PpuAddress r) -> PPU.read (ppu nes) r
   (Ram8 r)       -> loadRam8 nes r
   (Ram16 r)      -> loadRam16 nes r
 
 loadRam8 :: Nes s -> Word16 -> ST s Word8
 loadRam8 nes addr
   | addr < 0x2000 = CPU.readRam (cpu nes) addr
-  | addr < 0x4000 = PPU.read (ppu nes) addr
+  | addr < 0x4000 = PPU.readRegister (ppu nes) addr
   | addr >= 0x4000 && addr <= 0x4017 = error "IO read not implemented!"
   | addr >= 0x6000 && addr <= 0xFFFF = pure $ readRom (mapper nes) addr
   | otherwise = error "Erroneous read detected!"
@@ -57,13 +58,14 @@ loadRam16 nes addr = do
 store :: Nes s -> Address a -> a -> ST s ()
 store nes addr v = case addr of
   (CpuAddress r) -> CPU.write (cpu nes) r v
+  (PpuAddress r) -> PPU.write (ppu nes) r v
   (Ram8 r)       -> storeRam8 nes r v
   (Ram16 r)      -> storeRam16 nes r v
 
 storeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
 storeRam8 nes r v
   | r < 0x2000 = CPU.writeRam (cpu nes) r v
-  | r < 0x4000 = PPU.write (ppu nes) r v
+  | r < 0x4000 = PPU.writeRegister (ppu nes) r v
   | r >= 0x4000 && r <= 0x4017 = pure ()
   | r >= 0x4020 && r <= 0xFFFF = error "Cannot write to cart space"
   | otherwise = error "Erroneous write detected!"

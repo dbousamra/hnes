@@ -4,14 +4,15 @@ module Emulator.CPU.Execution(
 ) where
 
 import           Control.Monad
-import           Data.Bits        hiding (bit)
+import           Control.Monad.IO.Class
+import           Data.Bits              hiding (bit)
 import           Data.Word
 import           Emulator.Address
 import           Emulator.Monad
 import           Emulator.Opcode
-import           Emulator.Trace   (Trace (..), renderTrace)
+import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
-import           Prelude          hiding (and, compare)
+import           Prelude                hiding (and, compare, cycles)
 
 reset :: MonadEmulator m => m ()
 reset = do
@@ -20,12 +21,13 @@ reset = do
   store (CpuAddress Sp) 0xFD
   store (CpuAddress P) 0x24
 
-step :: MonadEmulator m => m Trace
+step :: (MonadIO m, MonadEmulator m) => m Trace
 step = do
-  opcode @ (Opcode _ _ mode) <- loadNextOpcode
-  addr <- addressForMode mode
+  opcode <- loadNextOpcode
+  (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
   trace <- trace opcode addr
-  incrementPc $ instructionLength opcode
+  incrementPc opcode
+  incrementCycles opcode pageCrossed
   runInstruction opcode addr
   pure trace
 
@@ -40,80 +42,109 @@ trace op addr = do
   xv  <- load $ CpuAddress X
   yv  <- load $ CpuAddress Y
   pv  <- load $ CpuAddress P
+  cycles <- load $ CpuAddress CpuCycles
   let instrLength = instructionLength op
       a1R = if instrLength < 2 then 0x0 else a1
       a2R = if instrLength < 3 then 0x0 else a2
-  pure (Trace pcv spv av xv yv pv op a0 a1R a2R)
+  pure (Trace pcv spv av xv yv pv op a0 a1R a2R ((cycles * 3) `mod` 341))
 
 loadNextOpcode :: MonadEmulator m => m Opcode
 loadNextOpcode = do
-  pc <- load $ CpuAddress Pc
-  pcv <- load (Ram8 pc)
-  pure $ decodeOpcode pcv
+  pcv <- load $ CpuAddress Pc
+  av <- load (Ram8 pcv)
+  pure $ decodeOpcode av
 
-addressForMode :: MonadEmulator m => AddressMode -> m Word16
-addressForMode mode = case mode of
+addressPageCrossForMode :: MonadEmulator m => AddressMode -> m (Bool, Word16)
+addressPageCrossForMode mode = case mode of
   Absolute -> do
     pcv <- load $ CpuAddress Pc
-    load $ Ram16 (pcv + 1)
+    addrV <- load $ Ram16 (pcv + 1)
+    pure (False, addrV)
   AbsoluteX -> do
     pcv <- load $ CpuAddress Pc
     xv <- load $ CpuAddress X
     v <- load $ Ram16 (pcv + 1)
-    pure $ v + toWord16 xv
+    let addrV = v + toWord16 xv
+    let pageCrossed = differentPages (addrV - (toWord16 xv)) addrV
+    pure (pageCrossed, addrV)
   AbsoluteY -> do
     pcv <- load $ CpuAddress Pc
     yv <- load $ CpuAddress Y
     v <- load $ Ram16 (pcv + 1)
-    pure $ v + toWord16 yv
+    let addrV = v + toWord16 yv
+    let pageCrossed = differentPages (addrV - (toWord16 yv)) addrV
+    pure (pageCrossed, addrV)
   Accumulator ->
-    pure 0
+    pure (False, 0)
   Immediate -> do
     pcv <- load $ CpuAddress Pc
-    pure $ pcv + 1
+    pure (False, pcv + 1)
   Implied ->
-    pure 0
+    pure (False, 0)
   Indirect -> do
     pcv <- load $ CpuAddress Pc
     addr <- load $ Ram16 (pcv + 1)
     yo <- read16Bug addr
-    pure yo
+    pure (False, yo)
   IndirectIndexed -> do
     pcv <- load $ CpuAddress Pc
     yv <- load $ CpuAddress Y
     v <- load (Ram8 $ pcv + 1)
     addr <- read16Bug $ toWord16 v
-    pure $ addr + toWord16 yv
+    let addrV = addr + toWord16 yv
+    let pageCrossed = differentPages (addrV - (toWord16 yv)) addrV
+    pure (pageCrossed, addrV)
   IndexedIndirect -> do
     pcv <- load $ CpuAddress Pc
     xv <- load $ CpuAddress X
     v <- load (Ram8 $ pcv + 1)
-    read16Bug $ toWord16 (v + xv)
+    addrV <- read16Bug $ toWord16 (v + xv)
+    pure (False, addrV)
   Relative -> do
     pcv <- load $ CpuAddress Pc
     offset16 <- load $ Ram16 (pcv + 1)
     let offset8 = firstNibble offset16
     if offset8 < 0x80 then
-      pure $ pcv + 2 + offset8
+      pure (False, pcv + 2 + offset8)
     else
-      pure $ pcv + 2 + offset8 - 0x100
+      pure (False, pcv + 2 + offset8 - 0x100)
   ZeroPage -> do
     pcv <- load $ CpuAddress Pc
     v <- load $ Ram8 (pcv + 1)
-    pure $ toWord16 v
+    pure (False, toWord16 v)
   ZeroPageX -> do
     pcv <- load $ CpuAddress Pc
     xv <- load $ CpuAddress X
     v <- load $ Ram8 (pcv + 1)
-    pure $ toWord16 (v + xv)
+    pure (False, toWord16 $ v + xv)
   ZeroPageY -> do
     pcv <- load $ CpuAddress Pc
     yv <- load $ CpuAddress Y
     v <- load $ Ram8 (pcv + 1)
-    pure $ toWord16 (v + yv)
+    pure (False, toWord16 $ v + yv)
 
-runInstruction :: MonadEmulator m => Opcode -> (Word16 -> m ())
-runInstruction (Opcode _ mnemonic mode) = case mnemonic of
+differentPages :: Word16 -> Word16 -> Bool
+differentPages a b = (a .&. 0xF000) /= (b .&.0xFF00)
+
+incrementPc :: MonadEmulator m => Opcode -> m ()
+incrementPc opcode = modify (CpuAddress Pc) (+  (fromIntegral $ (len opcode)))
+
+incrementCycles :: MonadEmulator m => Opcode -> Bool -> m ()
+incrementCycles opcode pageCrossed =
+  modify (CpuAddress CpuCycles) (+ fromIntegral inc)
+  where
+    cycleBase = (cycles opcode)
+    inc = case pageCrossed of
+      False -> cycleBase
+      True  -> cycleBase * 2
+
+modify :: MonadEmulator m => Address a -> (a -> a) -> m ()
+modify addr f = do
+  av <- load addr
+  store addr (f av)
+
+runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
+runInstruction (Opcode _ mnemonic mode _ _) = case mnemonic of
   ADC -> adc
   AND -> and
   ASL -> asl mode
@@ -268,7 +299,7 @@ brk addr = do
   store (CpuAddress Pc) av
 
 -- BIT - Test Bits in memory with A
-bit :: MonadEmulator m => Word16 -> m ()
+bit :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bit addr = do
   v <- load $ Ram8 addr
   av <- load $ CpuAddress A
@@ -633,11 +664,6 @@ sre mode addr = lsr mode addr >> eor addr
 -- the Accumulator
 rra :: MonadEmulator m => AddressMode -> Word16 -> m ()
 rra mode addr = ror mode addr >> adc addr
-
-incrementPc :: MonadEmulator m => Word16 -> m ()
-incrementPc n = do
-  pc <- load $ CpuAddress Pc
-  store (CpuAddress Pc) (pc + n)
 
 -- Moves execution to addr if condition is set
 branch :: MonadEmulator m => m Bool -> Word16 -> m ()

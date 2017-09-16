@@ -33,24 +33,24 @@ parseTrace = do
   _ <- space
   spv <- string "SP:" >> hexWord8
   _ <- space
-  cyc <- string "CYC:" >> (count 3 anyChar)
+  cyc <- string "CYC:" >> cyclesP
   _ <- space
   slv <- string "SL:" >> (many $ noneOf "\n")
   let opcode = decodeOpcode a0r
-  pure $ Trace pcv spv av xv yv pv opcode a0r a1r a2r
+  pure $ Trace pcv spv av xv yv pv opcode a0r a1r a2r cyc
 
 addr :: Parser Word8
 addr = zeroAddr <|> hexWord8
   where zeroAddr = (count 2 space) >> (pure 0x0)
-
-separator :: Parser ()
-separator = void $ (space <|> char '*')
 
 hexWord8 :: Parser Word8
 hexWord8 = toHexValue <$> count 2 hexDigit
 
 hexWord16 :: Parser Word16
 hexWord16 = toHexValue <$> count 4 hexDigit
+
+cyclesP :: Parser Int
+cyclesP = read <$> (count 3 anyChar)
 
 toHexValue :: (Num a, Eq a) => String -> a
 toHexValue = fst . head . readHex
