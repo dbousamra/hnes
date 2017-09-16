@@ -21,15 +21,15 @@ reset = do
   store (CpuAddress Sp) 0xFD
   store (CpuAddress P) 0x24
 
-step :: (MonadIO m, MonadEmulator m) => m Trace
+step :: (MonadIO m, MonadEmulator m) => m (Int, Trace)
 step = do
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
   trace <- trace opcode addr
   incrementPc opcode
-  incrementCycles opcode pageCrossed
+  cycles <- incrementCycles opcode pageCrossed
   runInstruction opcode addr
-  pure trace
+  pure (cycles, trace)
 
 trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
 trace op addr = do
@@ -43,9 +43,9 @@ trace op addr = do
   yv  <- load $ CpuAddress Y
   pv  <- load $ CpuAddress P
   cycles <- load $ CpuAddress CpuCycles
-  let instrLength = instructionLength op
-      a1R = if instrLength < 2 then 0x0 else a1
-      a2R = if instrLength < 3 then 0x0 else a2
+  let instrLength = len op
+  let a1R = if instrLength < 2 then 0x0 else a1
+  let a2R = if instrLength < 3 then 0x0 else a2
   pure (Trace pcv spv av xv yv pv op a0 a1R a2R ((cycles * 3) `mod` 341))
 
 loadNextOpcode :: MonadEmulator m => m Opcode
@@ -124,19 +124,22 @@ addressPageCrossForMode mode = case mode of
     pure (False, toWord16 $ v + yv)
 
 differentPages :: Word16 -> Word16 -> Bool
-differentPages a b = (a .&. 0xF000) /= (b .&.0xFF00)
+differentPages a b = (a .&. 0xFF00) /= (b .&. 0xFF00)
 
 incrementPc :: MonadEmulator m => Opcode -> m ()
 incrementPc opcode = modify (CpuAddress Pc) (+  (fromIntegral $ (len opcode)))
 
-incrementCycles :: MonadEmulator m => Opcode -> Bool -> m ()
-incrementCycles opcode pageCrossed =
-  modify (CpuAddress CpuCycles) (+ fromIntegral inc)
+incrementCycles :: (MonadIO m, MonadEmulator m) => Opcode -> Bool -> m Int
+incrementCycles opcode pageCrossed = do
+  liftIO $ putStrLn ("Total cycles for " ++ (show opcode) ++ " is " ++ (show cyclesToIncrementBy))
+  modify (CpuAddress CpuCycles) (+ fromIntegral cyclesToIncrementBy)
+  pure cyclesToIncrementBy
   where
-    cycleBase = (cycles opcode)
-    inc = case pageCrossed of
-      False -> cycleBase
-      True  -> cycleBase * 2
+    base = (cycles opcode)
+    extra = (pageCrossCycles opcode)
+    cyclesToIncrementBy = case pageCrossed of
+      False -> base
+      True  -> base + extra
 
 modify :: MonadEmulator m => Address a -> (a -> a) -> m ()
 modify addr f = do
@@ -144,7 +147,7 @@ modify addr f = do
   store addr (f av)
 
 runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
-runInstruction (Opcode _ mnemonic mode _ _) = case mnemonic of
+runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   ADC -> adc
   AND -> and
   ASL -> asl mode
@@ -261,31 +264,31 @@ and addr = do
   setZN av'
 
 -- BCC - Branch on carry flag clear
-bcc :: MonadEmulator m => Word16 -> m ()
+bcc :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bcc = branch $ not <$> getFlag Carry
 
 -- BCS - Branch on carry flag set
-bcs :: MonadEmulator m => Word16 -> m ()
+bcs :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bcs = branch $ getFlag Carry
 
 -- BEQ - Branch if zero set
-beq :: MonadEmulator m => Word16 -> m ()
+beq :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 beq = branch $ getFlag Zero
 
 -- BMI - Branch if minus
-bmi :: MonadEmulator m => Word16 -> m ()
+bmi :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bmi = branch $ getFlag Negative
 
 -- BPL - Branch if positive
-bpl :: MonadEmulator m => Word16 -> m ()
+bpl :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bpl = branch $ not <$> getFlag Negative
 
 -- BVS - Branch if overflow clear
-bvc :: MonadEmulator m => Word16 -> m ()
+bvc :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bvc = branch $ not <$> getFlag Overflow
 
 -- BVS - Branch if overflow set
-bvs :: MonadEmulator m => Word16 -> m ()
+bvs :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bvs = branch $ getFlag Overflow
 
 -- BRK - Force interrupt
@@ -309,7 +312,7 @@ bit addr = do
   setN v
 
 -- BNE - Branch if zero not set
-bne :: MonadEmulator m => Word16 -> m ()
+bne :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bne = branch $ not <$> getFlag Zero
 
 -- CLC - Clear carry flag
@@ -666,13 +669,18 @@ rra :: MonadEmulator m => AddressMode -> Word16 -> m ()
 rra mode addr = ror mode addr >> adc addr
 
 -- Moves execution to addr if condition is set
-branch :: MonadEmulator m => m Bool -> Word16 -> m ()
+branch :: (MonadIO m, MonadEmulator m) => m Bool -> Word16 -> m ()
 branch cond addr = do
   c <- cond
-  if c then
+  if c then do
     store (CpuAddress Pc) addr
+    if differentPages addr addr then
+      modify (CpuAddress CpuCycles) (+ 2)
+    else
+      modify (CpuAddress CpuCycles) (+ 1)
   else
     pure ()
+
 
 read16Bug :: MonadEmulator m => Word16 -> m Word16
 read16Bug addr = do

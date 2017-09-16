@@ -22,7 +22,7 @@ import           Prelude                hiding (and, compare)
 import           Text.Printf            (printf)
 
 r :: IO ()
-r = void $ runDebug "roms/nestest.nes" (pure 0xC000)
+r = void $ runDebug "roms/color_test.nes" Nothing
 
 run :: FilePath -> IO ()
 run fp = void $ runDebug fp Nothing
@@ -34,7 +34,7 @@ runDebug fp startPc = do
     case startPc of
       Just v  -> store (CpuAddress Pc) v
       Nothing -> reset
-    emulateDebug 10
+    emulateDebug 100000
 
 emulate :: (MonadIO m, MonadEmulator m) => m ()
 emulate = step >> emulate
@@ -49,8 +49,8 @@ emulateDebug n = go 0 n [] where
 
 step :: (MonadIO m, MonadEmulator m) => m Trace
 step = do
-  trace <- CPU.step
-  _ <- PPU.step
+  (cycles, trace) <- CPU.step
+  replicateM_ (cycles * 3) PPU.step
   pure trace
 
 reset :: MonadEmulator m => m ()

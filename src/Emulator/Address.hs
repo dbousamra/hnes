@@ -10,7 +10,6 @@ module Emulator.Address (
 import           Data.Word
 
 -- GADTs are used to represent addressing
-
 data CpuAddress a where
   Pc        :: CpuAddress Word16
   Sp        :: CpuAddress Word8

@@ -25,7 +25,7 @@ instance Show Trace where
   show = renderTrace
 
 renderTrace :: Trace -> String
-renderTrace (Trace pcv spv av xv yv pv (Opcode _ mnem _ _ _) a0 a1 a2 cyc) =
+renderTrace (Trace pcv spv av xv yv pv (Opcode _ mnem _ _ _ _) a0 a1 a2 cyc) =
   executionPortion ++ registerPortion where
     a0R = printf "%02X" a0 :: String
     a1R = if a0 == 0x0 then "  " else printf "%02X" a1
