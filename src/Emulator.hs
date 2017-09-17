@@ -2,7 +2,9 @@ module Emulator (
     run
   , runDebug
   , r
+  , emulateDebug
   , step
+  , reset
 ) where
 
 import           Control.Monad
@@ -12,10 +14,10 @@ import qualified Data.ByteString        as BS
 import           Data.Word
 import           Emulator.Address
 import           Emulator.Cartridge
-import qualified Emulator.CPU.Execution as CPU
+import qualified Emulator.CPU           as CPU
 import           Emulator.Monad
 import           Emulator.Opcode
-import qualified Emulator.PPU.Execution as PPU
+import qualified Emulator.PPU           as PPU
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
 import           Prelude                hiding (and, compare)
@@ -34,7 +36,7 @@ runDebug fp startPc = do
     case startPc of
       Just v  -> store (CpuAddress Pc) v
       Nothing -> reset
-    emulateDebug 100000
+    emulateDebug 1000000000
 
 emulate :: (MonadIO m, MonadEmulator m) => m ()
 emulate = step >> emulate

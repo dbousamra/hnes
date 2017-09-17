@@ -23,6 +23,7 @@ data PpuAddress a where
   PpuCycles :: PpuAddress Int
   Scanline  :: PpuAddress Int
   VBlank    :: PpuAddress Bool
+  Screen    :: PpuAddress Int
 
 data Address a where
   CpuAddress :: CpuAddress a -> Address a
