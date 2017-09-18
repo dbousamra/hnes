@@ -56,5 +56,5 @@ step = do
   pure trace
 
 reset :: MonadEmulator m => m ()
-reset = CPU.reset
+reset = CPU.reset >> PPU.reset
 

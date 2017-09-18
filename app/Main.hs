@@ -32,7 +32,7 @@ appLoop :: (MonadIO m, MonadEmulator m) => SDL.Renderer -> m ()
 appLoop renderer = do
   trace <- step
   liftIO $ putStrLn $ renderTrace trace
-  render renderer
+
   events <- liftIO $ SDL.pollEvents
   let eventIsQPress event =
         case eventPayload event of
@@ -41,7 +41,7 @@ appLoop renderer = do
             keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeQ
           _ -> False
       qPressed = any eventIsQPress events
-  liftIO $ SDL.rendererDrawColor renderer $= V4 0 0 255 255
   liftIO $ SDL.clear renderer
+  render renderer
   liftIO $ SDL.present renderer
   unless qPressed (appLoop renderer)
