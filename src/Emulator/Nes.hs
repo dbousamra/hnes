@@ -22,7 +22,7 @@ import           Data.Bits                   (shiftL, shiftR, testBit, (.&.),
                                               (.|.))
 import qualified Data.ByteString             as BS
 import           Data.STRef
-import qualified Data.Vector                 as V
+import qualified Data.Vector.Unboxed         as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
 import           Emulator.Address
@@ -62,8 +62,6 @@ data ColorMode = Color | Grayscale
 
 data Visibility = Hidden | Shown
 
-type Screen s = VUM.MVector s Word8
-
 data PPU s = PPU {
   -- Misc
   ppuCycles             :: STRef s Int,
@@ -71,7 +69,7 @@ data PPU s = PPU {
   writeToggle           :: STRef s Bool,
   -- Data
   oamData               :: VUM.MVector s Word8,
-  front                 :: Screen s,
+  front                 :: VUM.MVector s Word8,
   -- Addresses
   currentVramAddress    :: STRef s Word16,
   tempVramAddress       :: STRef s Word16,
@@ -236,9 +234,7 @@ readPPU ppu addr = case addr of
   PpuCycles -> readSTRef $ ppuCycles ppu
   Scanline  -> readSTRef $ scanline ppu
   VBlank    -> readSTRef $ vBlank ppu
-  Screen    -> do
-    V.freeze (front ppu)
-    pure 1
+  Screen    -> VU.freeze $ front ppu
 
 writePPU :: PPU s -> PpuAddress a -> a -> ST s ()
 writePPU ppu addr v = case addr of

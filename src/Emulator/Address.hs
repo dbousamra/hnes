@@ -7,6 +7,7 @@ module Emulator.Address (
   , Flag(..)
 ) where
 
+import           Data.Vector.Unboxed
 import           Data.Word
 
 -- GADTs are used to represent addressing
@@ -23,7 +24,7 @@ data PpuAddress a where
   PpuCycles :: PpuAddress Int
   Scanline  :: PpuAddress Int
   VBlank    :: PpuAddress Bool
-  Screen    :: PpuAddress Int
+  Screen    :: PpuAddress (Vector Word8)
 
 data Address a where
   CpuAddress :: CpuAddress a -> Address a
