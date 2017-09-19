@@ -2,25 +2,25 @@
 
 module Main where
 
-import           Control.Monad          (unless)
+import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
-import           Emulator               (emulateDebug, reset, run, step)
+import           Emulator               (emulateDebug, reset, run, step,
+                                         stepFrame)
 import           Emulator.Cartridge     (parseCartridge)
 import           Emulator.Monad         (MonadEmulator (..), runIOEmulator)
+import           Emulator.Nes
 import           Emulator.Trace         (renderTrace)
-import           Emulator.UI.SDL        (render)
+import           Foreign.C.Types
 import           SDL                    as SDL
 import           System.Environment     (getArgs)
-
--- main :: IO ()
--- main = fmap head getArgs >>= run
 
 main :: IO ()
 main = do
   -- Set up SDL
   liftIO $ SDL.initializeAll
-  window <- liftIO $ SDL.createWindow "hnes" SDL.defaultWindow
+  let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
+  window <- liftIO $ SDL.createWindow "hnes" config
   renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
   -- Create NES
   cart <- parseCartridge <$> BS.readFile "roms/color_test.nes"
@@ -30,9 +30,7 @@ main = do
 
 appLoop :: (MonadIO m, MonadEmulator m) => SDL.Renderer -> m ()
 appLoop renderer = do
-  trace <- step
-  liftIO $ putStrLn $ renderTrace trace
-
+  traces <- stepFrame
   events <- liftIO $ SDL.pollEvents
   let eventIsQPress event =
         case eventPayload event of
@@ -41,7 +39,25 @@ appLoop renderer = do
             keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeQ
           _ -> False
       qPressed = any eventIsQPress events
-  liftIO $ SDL.clear renderer
+
   render renderer
   liftIO $ SDL.present renderer
   unless qPressed (appLoop renderer)
+
+render :: (MonadIO m, MonadEmulator m) => SDL.Renderer -> m ()
+render renderer = do
+  let scale = 2
+
+  forM_ [0 .. 256 - 1] (\x -> do
+    forM_ [0 .. 240 - 1] (\y -> do
+      let addr = (PpuAddress $ Screen (fromIntegral x, fromIntegral y))
+      (r, g, b) <- load addr
+      let color = V4 r g b maxBound
+      SDL.rendererDrawColor renderer $= color
+      let area = SDL.Rectangle
+                    (SDL.P (V2 (x * scale) (y * scale)))
+                    (V2 scale scale)
+      SDL.fillRect renderer (Just area)))
+  liftIO $ putStrLn "Rendering"
+
+

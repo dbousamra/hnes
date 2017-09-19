@@ -3,8 +3,7 @@
 
 module Emulator.Nes (
     Nes(..)
-  , CPU(..)
-  , PPU(..)
+  , Flag(..)
   , NameTableAddr(..)
   , IncrementMode(..)
   , SpriteTableAddr(..)
@@ -12,8 +11,11 @@ module Emulator.Nes (
   , SpriteSize(..)
   , ColorMode(..)
   , Visibility(..)
-  , load
-  , store
+  , Address(..)
+  , CpuAddress(..)
+  , PpuAddress(..)
+  , read
+  , write
   , new
 ) where
 
@@ -25,11 +27,29 @@ import           Data.STRef
 import qualified Data.Vector.Unboxed         as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
-import           Emulator.Address
 import           Emulator.Cartridge
-import           Emulator.Mapper
 import           Emulator.Util
-import           Prelude                     hiding (cycles, replicate)
+import           Prelude                     hiding (cycles, read, replicate)
+
+
+data NameTableAddr
+  = NameTable2000
+  | NameTable2400
+  | NameTable2800
+  | NameTable2C00
+  deriving (Show)
+
+data IncrementMode = Horizontal | Vertical
+
+data SpriteTableAddr = SpriteTable0000 | SpriteTable1000
+
+data BackgroundTableAddr = BackgroundTable0000 | BackgroundTable1000
+
+data SpriteSize = Normal | Double
+
+data ColorMode = Color | Grayscale
+
+data Visibility = Hidden | Shown
 
 data Nes s = Nes {
   cpu    :: CPU s,
@@ -48,28 +68,15 @@ data CPU s = CPU {
   cycles :: STRef       s Int
 }
 
-data NameTableAddr = NameTable2000 | NameTable2400 | NameTable2800 | NameTable2C00
-
-data IncrementMode = Horizontal | Vertical
-
-data SpriteTableAddr = SpriteTable0000 | SpriteTable1000
-
-data BackgroundTableAddr = BackgroundTable0000 | BackgroundTable1000
-
-data SpriteSize = Normal | Double
-
-data ColorMode = Color | Grayscale
-
-data Visibility = Hidden | Shown
-
 data PPU s = PPU {
   -- Misc
   ppuCycles             :: STRef s Int,
   scanline              :: STRef s Int,
+  frameCount            :: STRef s Int,
   writeToggle           :: STRef s Bool,
   -- Data
   oamData               :: VUM.MVector s Word8,
-  front                 :: VUM.MVector s Word8,
+  screen                :: VUM.MVector s (Word8, Word8, Word8),
   -- Addresses
   currentVramAddress    :: STRef s Word16,
   tempVramAddress       :: STRef s Word16,
@@ -97,6 +104,41 @@ data PPU s = PPU {
   vBlank                :: STRef s Bool
 }
 
+-- GADTs are used to represent addressing
+data CpuAddress a where
+  Pc:: CpuAddress Word16
+  Sp:: CpuAddress Word8
+  A :: CpuAddress Word8
+  X :: CpuAddress Word8
+  Y :: CpuAddress Word8
+  P :: CpuAddress Word8
+  CpuCycles :: CpuAddress Int
+
+data PpuAddress a where
+  PpuCycles :: PpuAddress Int
+  Scanline :: PpuAddress Int
+  FrameCount :: PpuAddress Int
+  NameTableAddr :: PpuAddress NameTableAddr
+  VBlank :: PpuAddress Bool
+  Screen :: (Int, Int) -> PpuAddress (Word8, Word8, Word8)
+
+data Address a where
+  CpuAddress :: CpuAddress a -> Address a
+  PpuAddress :: PpuAddress a -> Address a
+  Ram8  :: Word16 -> Address Word8
+  Ram16 :: Word16 -> Address Word16
+
+data Flag
+  = Negative
+  | Overflow
+  | Unused
+  | Break
+  | Decimal
+  | Interrupt
+  | Zero
+  | Carry
+  deriving (Enum)
+
 new :: Cartridge -> ST s (Nes s)
 new cart = do
   mapper <- pure $ mapper0 cart
@@ -104,15 +146,15 @@ new cart = do
   ppu <- newPPU
   pure $ Nes cpu ppu mapper
 
-load :: Nes s -> Address a -> ST s a
-load nes addr = case addr of
+read :: Nes s -> Address a -> ST s a
+read nes addr = case addr of
   (CpuAddress r) -> readCPU (cpu nes) r
   (PpuAddress r) -> readPPU (ppu nes) r
   (Ram8 r)       -> readRam8 nes r
   (Ram16 r)      -> readRam16 nes r
 
-store :: Nes s -> Address a -> a -> ST s ()
-store nes addr v = case addr of
+write :: Nes s -> Address a -> a -> ST s ()
+write nes addr v = case addr of
   (CpuAddress r) -> writeCPU (cpu nes) r v
   (PpuAddress r) -> writePPU (ppu nes) r v
   (Ram8 r)       -> writeRam8 nes r v
@@ -154,7 +196,6 @@ newCPU = do
   x <- newSTRef 0x0
   y <- newSTRef 0x0
   p <- newSTRef 0x24 -- should this be 0x34?
-  p <- newSTRef 0x24 -- should this be 0x34?
   ram <- VUM.replicate 65536 0x0
   cycles <- newSTRef 0
   pure $ CPU pc sp a x y p ram cycles
@@ -184,15 +225,16 @@ newPPU = do
   -- Misc
   cycles <- newSTRef 0
   scanline <- newSTRef 0
+  frameCount <- newSTRef 0
   writeToggle <- newSTRef False
   -- Data
   oamData <- VUM.replicate 0x100 0x0
-  front <- VUM.replicate (256 * 240) 0xAA
+  screen <- VUM.replicate (256 * 240) (0, 0, 0)
   -- Addresses
   currentVramAddress <- newSTRef 0x0
   tempVramAddress <- newSTRef 0x0
   oamAddress <- newSTRef 0x0
-  -- Control regisyer
+  -- Control register
   nameTable <- newSTRef NameTable2000
   incrementMode <- newSTRef Horizontal
   spriteTable <- newSTRef SpriteTable0000
@@ -216,9 +258,9 @@ newPPU = do
 
   pure $ PPU
     -- Misc
-    cycles scanline writeToggle
+    cycles scanline frameCount writeToggle
     -- Data
-    oamData front
+    oamData screen
     -- Addresses
     currentVramAddress tempVramAddress oamAddress
     -- Control register
@@ -231,16 +273,20 @@ newPPU = do
 
 readPPU :: PPU s -> PpuAddress a -> ST s a
 readPPU ppu addr = case addr of
-  PpuCycles -> readSTRef $ ppuCycles ppu
-  Scanline  -> readSTRef $ scanline ppu
-  VBlank    -> readSTRef $ vBlank ppu
-  Screen    -> VU.freeze $ front ppu
+  PpuCycles     -> readSTRef $ ppuCycles ppu
+  NameTableAddr -> readSTRef $ nameTable ppu
+  Scanline      -> readSTRef $ scanline ppu
+  FrameCount    -> readSTRef $ frameCount ppu
+  VBlank        -> readSTRef $ vBlank ppu
+  Screen coords -> VUM.read (screen ppu) (translateXY coords 256)
 
 writePPU :: PPU s -> PpuAddress a -> a -> ST s ()
 writePPU ppu addr v = case addr of
-  PpuCycles -> modifySTRef' (ppuCycles ppu) (const v)
-  Scanline  -> modifySTRef' (scanline ppu) (const v)
-  VBlank    -> modifySTRef' (vBlank ppu) (const v)
+  PpuCycles     -> modifySTRef' (ppuCycles ppu) (const v)
+  Scanline      -> modifySTRef' (scanline ppu) (const v)
+  FrameCount    -> modifySTRef' (frameCount ppu) (const v)
+  VBlank        -> modifySTRef' (vBlank ppu) (const v)
+  Screen coords -> VUM.write (screen ppu) (translateXY coords 256) v
 
 writePPURegister :: Nes s -> Word16 -> Word8 -> ST s ()
 writePPURegister nes addr v = case (0x2000 + addr `mod` 8) of
@@ -347,3 +393,6 @@ readOAM ppu = error $ "Unsupported PPU readOAM"
 
 readMemory :: PPU s -> ST s Word8
 readMemory ppu = error $ "Unsupported PPU readMemory "
+
+translateXY :: (Int, Int) -> Int -> Int
+translateXY (x, y) width = x + (y * width)

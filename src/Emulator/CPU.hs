@@ -7,8 +7,8 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Bits              hiding (bit)
 import           Data.Word
-import           Emulator.Address
 import           Emulator.Monad
+import           Emulator.Nes           hiding (cycles)
 import           Emulator.Opcode
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util

@@ -9,13 +9,12 @@ module Emulator.Monad (
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.ST     (RealWorld, stToIO)
 import           Control.Monad.Trans  (MonadIO, lift)
-import           Emulator.Address
 import           Emulator.Cartridge
 import           Emulator.Nes         as Nes
 
 class Monad m => MonadEmulator m where
-  load :: Address a -> m a
-  store :: Address a -> a -> m ()
+  load :: Nes.Address a -> m a
+  store :: Nes.Address a -> a -> m ()
 
 newtype IOEmulator a = IOEmulator (ReaderT (Nes RealWorld)  IO a)
   deriving (Functor, Applicative, Monad, MonadIO)
@@ -23,10 +22,10 @@ newtype IOEmulator a = IOEmulator (ReaderT (Nes RealWorld)  IO a)
 instance MonadEmulator IOEmulator where
   load address = IOEmulator $ do
     mem <- ask
-    lift $ stToIO $ Nes.load mem address
+    lift $ stToIO $ Nes.read mem address
   store address word = IOEmulator $ do
     mem <- ask
-    lift $ stToIO $ Nes.store mem address word
+    lift $ stToIO $ Nes.write mem address word
 
 runIOEmulator :: Cartridge -> IOEmulator a ->  IO a
 runIOEmulator cart (IOEmulator reader) = do
