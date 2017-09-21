@@ -16,10 +16,10 @@ import           Prelude                hiding (and, compare, cycles)
 
 reset :: MonadEmulator m => m ()
 reset = do
-  v <- load (Ram16 0xFFFC)
-  store (CpuAddress Pc) v
-  store (CpuAddress Sp) 0xFD
-  store (CpuAddress P) 0x24
+  v <- load (Cpu $ CpuMemory16 0xFFFC)
+  store (Cpu Pc) v
+  store (Cpu Sp) 0xFD
+  store (Cpu P) 0x24
 
 step :: (MonadIO m, MonadEmulator m) => m (Int, Trace)
 step = do
@@ -33,16 +33,16 @@ step = do
 
 trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
 trace op addr = do
-  pcv <- load $ CpuAddress Pc
-  a0 <- load (Ram8 $ pcv)
-  a1 <- load (Ram8 $ pcv + 1)
-  a2 <- load (Ram8 $ pcv + 2)
-  spv <- load $ CpuAddress Sp
-  av  <- load $ CpuAddress A
-  xv  <- load $ CpuAddress X
-  yv  <- load $ CpuAddress Y
-  pv  <- load $ CpuAddress P
-  cycles <- load $ CpuAddress CpuCycles
+  pcv <- load $ Cpu Pc
+  a0 <- load $ Cpu $ CpuMemory8 pcv
+  a1 <- load $ Cpu $ CpuMemory8 (pcv + 1)
+  a2 <- load $ Cpu $ CpuMemory8 (pcv + 2)
+  spv <- load $ Cpu Sp
+  av  <- load $ Cpu A
+  xv  <- load $ Cpu X
+  yv  <- load $ Cpu Y
+  pv  <- load $ Cpu P
+  cycles <- load $ Cpu CpuCycles
   let instrLength = len op
   let a1R = if instrLength < 2 then 0x0 else a1
   let a2R = if instrLength < 3 then 0x0 else a2
@@ -50,88 +50,88 @@ trace op addr = do
 
 loadNextOpcode :: MonadEmulator m => m Opcode
 loadNextOpcode = do
-  pcv <- load $ CpuAddress Pc
-  av <- load (Ram8 pcv)
+  pcv <- load $ Cpu Pc
+  av <- load (Cpu $ CpuMemory8 pcv)
   pure $ decodeOpcode av
 
 addressPageCrossForMode :: MonadEmulator m => AddressMode -> m (Bool, Word16)
 addressPageCrossForMode mode = case mode of
   Absolute -> do
-    pcv <- load $ CpuAddress Pc
-    addrV <- load $ Ram16 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    addrV <- load $ Cpu $ CpuMemory16 (pcv + 1)
     pure (False, addrV)
   AbsoluteX -> do
-    pcv <- load $ CpuAddress Pc
-    xv <- load $ CpuAddress X
-    v <- load $ Ram16 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    xv <- load $ Cpu X
+    v <- load $ Cpu $ CpuMemory16 (pcv + 1)
     let addrV = v + toWord16 xv
     let pageCrossed = differentPages (addrV - (toWord16 xv)) addrV
     pure (pageCrossed, addrV)
   AbsoluteY -> do
-    pcv <- load $ CpuAddress Pc
-    yv <- load $ CpuAddress Y
-    v <- load $ Ram16 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    yv <- load $ Cpu Y
+    v <- load $ Cpu $ CpuMemory16 (pcv + 1)
     let addrV = v + toWord16 yv
     let pageCrossed = differentPages (addrV - (toWord16 yv)) addrV
     pure (pageCrossed, addrV)
   Accumulator ->
     pure (False, 0)
   Immediate -> do
-    pcv <- load $ CpuAddress Pc
+    pcv <- load $ Cpu Pc
     pure (False, pcv + 1)
   Implied ->
     pure (False, 0)
   Indirect -> do
-    pcv <- load $ CpuAddress Pc
-    addr <- load $ Ram16 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    addr <- load $ Cpu $ CpuMemory16 (pcv + 1)
     yo <- read16Bug addr
     pure (False, yo)
   IndirectIndexed -> do
-    pcv <- load $ CpuAddress Pc
-    yv <- load $ CpuAddress Y
-    v <- load (Ram8 $ pcv + 1)
+    pcv <- load $ Cpu Pc
+    yv <- load $ Cpu Y
+    v <- load (Cpu $ CpuMemory8 $ pcv + 1)
     addr <- read16Bug $ toWord16 v
     let addrV = addr + toWord16 yv
     let pageCrossed = differentPages (addrV - (toWord16 yv)) addrV
     pure (pageCrossed, addrV)
   IndexedIndirect -> do
-    pcv <- load $ CpuAddress Pc
-    xv <- load $ CpuAddress X
-    v <- load (Ram8 $ pcv + 1)
+    pcv <- load $ Cpu Pc
+    xv <- load $ Cpu X
+    v <- load $ Cpu $ CpuMemory8 $ pcv + 1
     addrV <- read16Bug $ toWord16 (v + xv)
     pure (False, addrV)
   Relative -> do
-    pcv <- load $ CpuAddress Pc
-    offset16 <- load $ Ram16 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    offset16 <- load $ Cpu $ CpuMemory16 (pcv + 1)
     let offset8 = firstNibble offset16
     if offset8 < 0x80 then
       pure (False, pcv + 2 + offset8)
     else
       pure (False, pcv + 2 + offset8 - 0x100)
   ZeroPage -> do
-    pcv <- load $ CpuAddress Pc
-    v <- load $ Ram8 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    v <- load $ Cpu $ CpuMemory8 (pcv + 1)
     pure (False, toWord16 v)
   ZeroPageX -> do
-    pcv <- load $ CpuAddress Pc
-    xv <- load $ CpuAddress X
-    v <- load $ Ram8 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    xv <- load $ Cpu X
+    v <- load $ Cpu $ CpuMemory8 (pcv + 1)
     pure (False, toWord16 $ v + xv)
   ZeroPageY -> do
-    pcv <- load $ CpuAddress Pc
-    yv <- load $ CpuAddress Y
-    v <- load $ Ram8 (pcv + 1)
+    pcv <- load $ Cpu Pc
+    yv <- load $ Cpu Y
+    v <- load $ Cpu $ CpuMemory8 (pcv + 1)
     pure (False, toWord16 $ v + yv)
 
 differentPages :: Word16 -> Word16 -> Bool
 differentPages a b = (a .&. 0xFF00) /= (b .&. 0xFF00)
 
 incrementPc :: MonadEmulator m => Opcode -> m ()
-incrementPc opcode = modify (CpuAddress Pc) (+  (fromIntegral $ (len opcode)))
+incrementPc opcode = modify (Cpu Pc) (+  (fromIntegral $ (len opcode)))
 
 incrementCycles :: (MonadIO m, MonadEmulator m) => Opcode -> Bool -> m Int
 incrementCycles opcode pageCrossed = do
-  modify (CpuAddress CpuCycles) (+ fromIntegral cyclesToIncrementBy)
+  addCycles $ fromIntegral cyclesToIncrementBy
   pure cyclesToIncrementBy
   where
     base = (cycles opcode)
@@ -228,11 +228,11 @@ runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
 -- ADC - Add with carry
 adc :: MonadEmulator m => Word16 -> m ()
 adc addr = do
-  av <- load $ CpuAddress A
-  bv <- load $ Ram8 addr
+  av <- load $ Cpu A
+  bv <- load $ Cpu $ CpuMemory8 addr
   cv <- (fromIntegral . fromEnum) <$> getFlag Carry
-  store (CpuAddress A) (av + bv + cv)
-  av' <- load $ CpuAddress A
+  store (Cpu A) (av + bv + cv)
+  av' <- load $ Cpu A
   setZN av'
   let shouldCarry = toInt av + toInt bv + toInt cv > 0xFF
   let doesOverflow = ((av `xor` bv) .&. 0x80) == 0 && ((av `xor` av') .&. 0x80) /= 0
@@ -250,16 +250,16 @@ asl mode addr = do
   setZN shiftedV
   where
     dest = case mode of
-      Accumulator -> CpuAddress A
-      other       -> Ram8 addr
+      Accumulator -> Cpu A
+      other       -> Cpu $ CpuMemory8 addr
 
 -- AND - Logical and
 and :: MonadEmulator m => Word16 -> m ()
 and addr = do
-  av <- load $ CpuAddress A
-  v <- load $ Ram8 addr
-  store (CpuAddress A) (av .&. v)
-  av' <- load $ CpuAddress A
+  av <- load $ Cpu A
+  v <- load $ Cpu $ CpuMemory8 addr
+  store (Cpu A) (av .&. v)
+  av' <- load $ Cpu A
   setZN av'
 
 -- BCC - Branch on carry flag clear
@@ -293,18 +293,18 @@ bvs = branch $ getFlag Overflow
 -- BRK - Force interrupt
 brk :: MonadEmulator m => Word16 -> m ()
 brk addr = do
-  pcv <- load $ CpuAddress Pc
+  pcv <- load $ Cpu Pc
   push16 pcv
   php
   sei
-  av <- load (Ram16 0xFFFE)
-  store (CpuAddress Pc) av
+  av <- load (Cpu $ CpuMemory16 0xFFFE)
+  store (Cpu Pc) av
 
 -- BIT - Test Bits in memory with A
 bit :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 bit addr = do
-  v <- load $ Ram8 addr
-  av <- load $ CpuAddress A
+  v <- load $ Cpu $ CpuMemory8 addr
+  av <- load $ Cpu A
   let res = (v .&. av)
   setZ res
   setV v
@@ -333,113 +333,113 @@ clv = setFlag Overflow False
 -- CMP - Compare memory and A
 cmp :: MonadEmulator m => Word16 -> m ()
 cmp addr = do
-  v <- load $ Ram8 addr
-  av <- load $ CpuAddress A
+  v <- load $ Cpu $ CpuMemory8 addr
+  av <- load $ Cpu A
   compare av v
 
 -- CPX - Compare memory and X
 cpx :: MonadEmulator m => Word16 -> m ()
 cpx addr = do
-  v <- load $ Ram8 addr
-  xv <- load $ CpuAddress X
+  v <- load $ Cpu $ CpuMemory8 addr
+  xv <- load $ Cpu X
   compare xv v
 
 -- CPY - Compare memory and Y
 cpy :: MonadEmulator m => Word16 -> m ()
 cpy addr = do
-  v <- load $ Ram8 addr
-  yv <- load $ CpuAddress Y
+  v <- load $ Cpu $ CpuMemory8 addr
+  yv <- load $ Cpu Y
   compare yv v
 
 -- DEC - Decrement memory
 dec :: MonadEmulator m => Word16 -> m ()
 dec addr = do
-  v <- load $ Ram8 addr
+  v <- load $ Cpu $ CpuMemory8 addr
   let value = v - 1
-  store (Ram8 addr) value
+  store (Cpu $ CpuMemory8 addr) value
   setZN value
 
 -- DEX - Decrement X register
 dex :: MonadEmulator m => m ()
 dex = do
-  v <- load $ CpuAddress X
+  v <- load $ Cpu X
   let value = v - 1
-  store (CpuAddress X) value
+  store (Cpu X) value
   setZN value
 
 
 -- DEY - Decrement Y register
 dey :: MonadEmulator m => m ()
 dey = do
-  v <- load $ CpuAddress Y
+  v <- load $ Cpu Y
   let value = v - 1
-  store (CpuAddress Y) value
+  store (Cpu Y) value
   setZN value
 
 -- EOR - Exclusive or
 eor :: MonadEmulator m => Word16 -> m ()
 eor addr = do
-  v <- load $ Ram8 addr
-  av <- load $ CpuAddress A
+  v <- load $ Cpu $ CpuMemory8 addr
+  av <- load $ Cpu A
   let newAv = av `xor` v
-  store (CpuAddress A) newAv
+  store (Cpu A) newAv
   setZN newAv
 
 
 -- INC - Increment memory
 inc :: MonadEmulator m => Word16 -> m ()
 inc addr = do
-  v <- load $ Ram8 addr
+  v <- load $ Cpu $ CpuMemory8 addr
   let value = v + 1
-  store (Ram8 addr) value
+  store (Cpu $ CpuMemory8 addr) value
   setZN value
 
 -- INX - Increment X register
 inx :: MonadEmulator m => m ()
 inx  = do
-  v <- load $ CpuAddress X
+  v <- load $ Cpu X
   let value = v + 1
-  store (CpuAddress X) value
+  store (Cpu X) value
   setZN value
 
 -- INY - Increment Y register
 iny :: MonadEmulator m => m ()
 iny  = do
-  v <- load $ CpuAddress Y
+  v <- load $ Cpu Y
   let value = v + 1
-  store (CpuAddress Y) value
+  store (Cpu Y) value
   setZN value
 
 -- JMP - Move execution to a particular address
 jmp :: MonadEmulator m => Word16 -> m ()
-jmp = store $ CpuAddress Pc
+jmp = store $ Cpu Pc
 
 -- JSR - Jump to subroutine
 jsr :: MonadEmulator m => Word16 -> m ()
 jsr addr = do
-  pcv <- load $ CpuAddress Pc
+  pcv <- load $ Cpu Pc
   push16 $ pcv - 1
-  store (CpuAddress Pc) addr
+  store (Cpu Pc) addr
 
 -- LDA - Load accumulator register
 lda :: MonadEmulator m => Word16 -> m ()
 lda addr = do
-  v <- load $ Ram8 addr
-  store (CpuAddress A) v
+  v <- load $ Cpu $ CpuMemory8 addr
+  store (Cpu A) v
   setZN v
 
 -- LDX - Load X Register
 ldx :: MonadEmulator m => Word16 -> m ()
 ldx addr = do
-  v <- load $ Ram8 addr
-  store (CpuAddress X) v
+  v <- load $ Cpu $ CpuMemory8 addr
+  store (Cpu X) v
   setZN v
 
 -- LDY - Load Y Register
 ldy :: MonadEmulator m => Word16 -> m ()
 ldy addr = do
-  v <- load $ Ram8 addr
-  store (CpuAddress Y) v
+  v <- load $ Cpu $ CpuMemory8 addr
+  store (Cpu Y) v
   setZN v
 
 -- LSR - Logical shift right
@@ -452,8 +452,8 @@ lsr mode addr = do
   setZN shiftedV
   where
     dest = case mode of
-      Accumulator -> CpuAddress A
-      other       -> Ram8 addr
+      Accumulator -> Cpu A
+      other       -> Cpu $ CpuMemory8 addr
 
 -- NOP - No operation. Do nothing :D
 nop :: MonadEmulator m => m ()
@@ -462,35 +462,35 @@ nop = pure ()
 -- PHP - Push processor status onto stack
 php :: MonadEmulator m => m ()
 php = do
-  p <- load $ CpuAddress P
+  p <- load $ Cpu P
   push $ p .|. 0x10
 
 -- PLA - Pull Accumulator register
 pla :: MonadEmulator m => m ()
 pla = do
   v <- pull
-  store (CpuAddress A) v
+  store (Cpu A) v
   setZN v
 
 -- PLP - Pull Accumulator register
 plp :: MonadEmulator m => m ()
 plp = do
   v <- pull
-  store (CpuAddress P) ((v .&. 0xEF) .|. 0x20)
+  store (Cpu P) ((v .&. 0xEF) .|. 0x20)
 
 -- PHA - Push Accumulator register
 pha :: MonadEmulator m => m ()
 pha = do
-  av <- load $ CpuAddress A
+  av <- load $ Cpu A
   push av
 
 -- ORA - Logical Inclusive OR
 ora :: MonadEmulator m => Word16 -> m ()
 ora addr = do
-  v <- load$ Ram8 addr
-  av <- load $ CpuAddress A
+  v <- load$ Cpu $ CpuMemory8 addr
+  av <- load $ Cpu A
   let newAv = av .|. v
-  store (CpuAddress A) newAv
+  store (Cpu A) newAv
   setZN newAv
 
 -- ROL - Rotate left
@@ -504,8 +504,8 @@ rol mode addr = do
   setZN shiftedV
   where
     dest = case mode of
-      Accumulator -> CpuAddress A
-      other       -> Ram8 addr
+      Accumulator -> Cpu A
+      other       -> Cpu $ CpuMemory8 addr
 
 -- ROR - Rotate right
 ror :: MonadEmulator m => AddressMode -> Word16 -> m ()
@@ -518,31 +518,31 @@ ror mode addr = do
   setZN shiftedV
   where
     dest = case mode of
-      Accumulator -> CpuAddress A
-      other       -> Ram8 addr
+      Accumulator -> Cpu A
+      other       -> Cpu $ CpuMemory8 addr
 
 -- RTI - Return from interrupt
 rti :: MonadEmulator m => m ()
 rti = do
   addr <- pull
-  store (CpuAddress P) (addr .&. 0xEf .|. 0x20)
+  store (Cpu P) (addr .&. 0xEf .|. 0x20)
   addr' <- pull16
-  store (CpuAddress Pc) addr'
+  store (Cpu Pc) addr'
 
 -- RTS - Return from a subroutine
 rts :: MonadEmulator m => m ()
 rts = do
   addr <- pull16
-  store (CpuAddress Pc) (addr + 1)
+  store (Cpu Pc) (addr + 1)
 
 -- SBC - Subtract with carry
 sbc :: MonadEmulator m => Word16 -> m ()
 sbc addr = do
-  av <- load $ CpuAddress A
-  bv <- load $ Ram8 addr
+  av <- load $ Cpu A
+  bv <- load $ Cpu $ CpuMemory8 addr
   cv <- (fromIntegral . fromEnum) <$> getFlag Carry
-  store (CpuAddress A) (av - bv - (1 - cv))
-  av' <- load $ CpuAddress A
+  store (Cpu A) (av - bv - (1 - cv))
+  av' <- load $ Cpu A
   setZN av'
   let shouldCarry = toInt av - toInt bv - toInt (1 - cv) >= 0
   let doesOverflow = ((av `xor` bv) .&. 0x80) /= 0 && ((av `xor` av') .&. 0x80) /= 0
@@ -564,61 +564,61 @@ sei = setFlag Interrupt True
 -- STA - Store Accumulator register
 sta :: MonadEmulator m => Word16 -> m ()
 sta addr = do
-  av <- load $ CpuAddress A
-  store (Ram8 addr) av
+  av <- load $ Cpu A
+  store (Cpu $ CpuMemory8 addr) av
 
 -- STX - Store X register
 stx :: MonadEmulator m => Word16 -> m ()
-stx addr = (load $ CpuAddress X) >>= (store $ Ram8 addr)
+stx addr = (load $ Cpu X) >>= (store $ Cpu $ CpuMemory8 addr)
 
 -- STY - Store Y register
 sty :: MonadEmulator m => Word16 -> m ()
-sty addr = (load $ CpuAddress Y) >>= (store $ Ram8 addr)
+sty addr = (load $ Cpu Y) >>= (store $ Cpu $ CpuMemory8 addr)
 
 -- TAX - Transfer Accumulator to X
 tax :: MonadEmulator m => Word16 -> m ()
 tax addr = do
-  av <- load $ CpuAddress A
-  store (CpuAddress X) av
-  xv <- load $ CpuAddress X
+  av <- load $ Cpu A
+  store (Cpu X) av
+  xv <- load $ Cpu X
   setZN xv
 
 -- TAY - Transfer Accumulator to Y
 tay :: MonadEmulator m => Word16 -> m ()
 tay addr =  do
-  av <- load $ CpuAddress A
-  store (CpuAddress Y) av
-  yv <- load $ CpuAddress Y
+  av <- load $ Cpu A
+  store (Cpu Y) av
+  yv <- load $ Cpu Y
   setZN yv
 
 -- TSX - Transfer Stack Pointer to X
 tsx :: MonadEmulator m => Word16 -> m ()
 tsx addr = do
-  spv <- load $ CpuAddress Sp
-  store (CpuAddress X) spv
-  xv <- load $ CpuAddress X
+  spv <- load $ Cpu Sp
+  store (Cpu X) spv
+  xv <- load $ Cpu X
   setZN xv
 
 -- TXA - Transfer X to Accumulator
 txa :: MonadEmulator m => Word16 -> m ()
 txa addr = do
-  xv <- load $ CpuAddress X
-  store (CpuAddress A) xv
-  av <- load $ CpuAddress A
+  xv <- load $ Cpu X
+  store (Cpu A) xv
+  av <- load $ Cpu A
   setZN av
 
 -- TXS - Transfer X to Stack Pointer
 txs :: MonadEmulator m => m ()
 txs = do
-  xv <- load $ CpuAddress X
-  store (CpuAddress Sp) xv
+  xv <- load $ Cpu X
+  store (Cpu Sp) xv
 
 -- TYA - Transfer Y to Accumulator
 tya :: MonadEmulator m => m ()
 tya = do
-  yv <- load $ CpuAddress Y
-  store (CpuAddress A) yv
-  av <- load $ CpuAddress A
+  yv <- load $ Cpu Y
+  store (Cpu A) yv
+  av <- load $ Cpu A
   setZN av
 
 -- Illegal instructions:
@@ -626,17 +626,17 @@ tya = do
 -- LAX - Load Accumulator and X with memory
 lax :: MonadEmulator m => Word16 -> m ()
 lax addr = do
-  v <- load (Ram8 addr)
-  store (CpuAddress A) v
-  store (CpuAddress X) v
+  v <- load (Cpu $ CpuMemory8 addr)
+  store (Cpu A) v
+  store (Cpu X) v
   setZN v
 
 -- SAX - AND X register with Accumulator and store result in memory
 sax :: MonadEmulator m => Word16 -> m ()
 sax addr = do
-  av <- load $ CpuAddress A
-  xv <- load $ CpuAddress X
-  store (Ram8 addr) (av .&. xv)
+  av <- load $ Cpu A
+  xv <- load $ Cpu X
+  store (Cpu $ CpuMemory8 addr) (av .&. xv)
 
 -- DCP - Subtract 1 from memory
 dcp :: MonadEmulator m => Word16 -> m ()
@@ -672,38 +672,38 @@ branch :: (MonadIO m, MonadEmulator m) => m Bool -> Word16 -> m ()
 branch cond addr = do
   c <- cond
   if c then do
-    store (CpuAddress Pc) addr
+    store (Cpu Pc) addr
     if differentPages addr addr then
-      modify (CpuAddress CpuCycles) (+ 2)
+      addCycles 2
     else
-      modify (CpuAddress CpuCycles) (+ 1)
+      addCycles 1
   else
     pure ()
 
 
 read16Bug :: MonadEmulator m => Word16 -> m Word16
 read16Bug addr = do
-  lo <- load $ Ram8 addr
-  hi <- load $ Ram8 $ (addr .&. 0xFF00) .|. (toWord16 $ (toWord8 addr) + 1)
+  lo <- load $ Cpu $ CpuMemory8 addr
+  hi <- load $ Cpu $ CpuMemory8 $ (addr .&. 0xFF00) .|. (toWord16 $ (toWord8 addr) + 1)
   pure $ makeW16 lo hi
 
 getFlag :: MonadEmulator m => Flag -> m Bool
 getFlag flag = do
-  v <- load $ CpuAddress P
+  v <- load $ Cpu P
   pure $ testBit v (7 - fromEnum flag)
 
 setFlag :: MonadEmulator m => Flag -> Bool -> m ()
 setFlag flag b = do
-  v <- load $ CpuAddress P
-  store (CpuAddress P) (opBit v (7 - fromEnum flag))
+  v <- load $ Cpu P
+  store (Cpu P) (opBit v (7 - fromEnum flag))
   where opBit = if b then setBit else clearBit
 
 pull :: MonadEmulator m => m Word8
 pull = do
-  spv <- load $ CpuAddress Sp
-  store (CpuAddress Sp) (spv + 1)
+  spv <- load $ Cpu Sp
+  store (Cpu Sp) (spv + 1)
   let i = 0x100 .|. (toWord16 spv + 1)
-  load $ Ram8 i
+  load $ Cpu $ CpuMemory8 i
 
 pull16 :: MonadEmulator m => m Word16
 pull16 = do
@@ -713,10 +713,10 @@ pull16 = do
 
 push :: MonadEmulator m => Word8 -> m ()
 push v = do
-  spv <- load $ CpuAddress Sp
+  spv <- load $ Cpu Sp
   let i = 0x100 .|. (toWord16 spv)
-  store (Ram8 i) v
-  store (CpuAddress Sp) (spv - 1)
+  store (Cpu $ CpuMemory8 i) v
+  store (Cpu Sp) (spv - 1)
 
 push16 :: MonadEmulator m => Word16 -> m ()
 push16 v = do
@@ -748,3 +748,5 @@ compare a b = do
 illegal :: MonadEmulator m => Mnemonic -> m ()
 illegal mnemonic = pure ()
 
+addCycles :: MonadEmulator m => Int -> m ()
+addCycles n = modify (Cpu CpuCycles) (+ n)

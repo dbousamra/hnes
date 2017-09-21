@@ -4,7 +4,6 @@
 module Emulator.Nes (
     Nes(..)
   , Flag(..)
-  , NameTableAddr(..)
   , IncrementMode(..)
   , SpriteTableAddr(..)
   , BackgroundTableAddr(..)
@@ -12,8 +11,8 @@ module Emulator.Nes (
   , ColorMode(..)
   , Visibility(..)
   , Address(..)
-  , CpuAddress(..)
-  , PpuAddress(..)
+  , Cpu(..)
+  , Ppu(..)
   , read
   , write
   , new
@@ -30,14 +29,6 @@ import           Data.Word
 import           Emulator.Cartridge
 import           Emulator.Util
 import           Prelude                     hiding (cycles, read, replicate)
-
-
-data NameTableAddr
-  = NameTable2000
-  | NameTable2400
-  | NameTable2800
-  | NameTable2C00
-  deriving (Show)
 
 data IncrementMode = Horizontal | Vertical
 
@@ -76,13 +67,15 @@ data PPU s = PPU {
   writeToggle           :: STRef s Bool,
   -- Data
   oamData               :: VUM.MVector s Word8,
+  nameTableData         :: VUM.MVector s Word8,
+  paletteData           :: VUM.MVector s Word8,
   screen                :: VUM.MVector s (Word8, Word8, Word8),
   -- Addresses
   currentVramAddress    :: STRef s Word16,
   tempVramAddress       :: STRef s Word16,
   oamAddress            :: STRef s Word8,
   -- Control register bits
-  nameTable             :: STRef s NameTableAddr,
+  nameTable             :: STRef s Word16,
   incrementMode         :: STRef s IncrementMode,
   spriteTable           :: STRef s SpriteTableAddr,
   bgTable               :: STRef s BackgroundTableAddr,
@@ -105,28 +98,30 @@ data PPU s = PPU {
 }
 
 -- GADTs are used to represent addressing
-data CpuAddress a where
-  Pc:: CpuAddress Word16
-  Sp:: CpuAddress Word8
-  A :: CpuAddress Word8
-  X :: CpuAddress Word8
-  Y :: CpuAddress Word8
-  P :: CpuAddress Word8
-  CpuCycles :: CpuAddress Int
+data Cpu a where
+  Pc:: Cpu Word16
+  Sp:: Cpu Word8
+  A :: Cpu Word8
+  X :: Cpu Word8
+  Y :: Cpu Word8
+  P :: Cpu Word8
+  CpuMemory8 :: Word16 -> Cpu Word8
+  CpuMemory16 :: Word16 -> Cpu Word16
+  CpuCycles :: Cpu Int
 
-data PpuAddress a where
-  PpuCycles :: PpuAddress Int
-  Scanline :: PpuAddress Int
-  FrameCount :: PpuAddress Int
-  NameTableAddr :: PpuAddress NameTableAddr
-  VBlank :: PpuAddress Bool
-  Screen :: (Int, Int) -> PpuAddress (Word8, Word8, Word8)
+data Ppu a where
+  PpuCycles :: Ppu Int
+  Scanline :: Ppu Int
+  FrameCount :: Ppu Int
+  NameTableAddr :: Ppu Word16
+  VBlank :: Ppu Bool
+  PpuMemory8 :: Word16 -> Ppu Word8
+  PpuMemory16 :: Word16 -> Ppu Word16
+  Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
 
 data Address a where
-  CpuAddress :: CpuAddress a -> Address a
-  PpuAddress :: PpuAddress a -> Address a
-  Ram8  :: Word16 -> Address Word8
-  Ram16 :: Word16 -> Address Word16
+  Cpu :: Cpu a -> Address a
+  Ppu :: Ppu a -> Address a
 
 data Flag
   = Negative
@@ -148,45 +143,13 @@ new cart = do
 
 read :: Nes s -> Address a -> ST s a
 read nes addr = case addr of
-  (CpuAddress r) -> readCPU (cpu nes) r
-  (PpuAddress r) -> readPPU (ppu nes) r
-  (Ram8 r)       -> readRam8 nes r
-  (Ram16 r)      -> readRam16 nes r
+  Cpu r -> readCPU nes r
+  Ppu r -> readPPU nes r
 
 write :: Nes s -> Address a -> a -> ST s ()
 write nes addr v = case addr of
-  (CpuAddress r) -> writeCPU (cpu nes) r v
-  (PpuAddress r) -> writePPU (ppu nes) r v
-  (Ram8 r)       -> writeRam8 nes r v
-  (Ram16 r)      -> writeRam16 nes r v
-
-readRam8 :: Nes s -> Word16 -> ST s Word8
-readRam8 nes addr
-  | addr < 0x2000 = VUM.read (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
-  | addr < 0x4000 = readPPURegister (ppu nes) addr
-  | addr >= 0x4000 && addr <= 0x4017 = error "IO read not implemented!"
-  | addr >= 0x6000 && addr <= 0xFFFF = pure $ readRom (mapper nes) addr
-  | otherwise = error "Erroneous read detected!"
-
-readRam16 :: Nes s -> Word16 -> ST s Word16
-readRam16 nes addr = do
-  lo <- readRam8 nes addr
-  hi <- readRam8 nes (addr + 1)
-  pure $ makeW16 lo hi
-
-writeRam8 :: Nes s -> Word16 -> Word8 -> ST s ()
-writeRam8 nes r v
-  | r < 0x2000 = VUM.write (ram $ cpu nes) (fromIntegral r `mod` 0x0800) v
-  | r < 0x4000 = writePPURegister nes r v
-  | r >= 0x4000 && r <= 0x4017 = pure ()
-  | r >= 0x4020 && r <= 0xFFFF = error "Cannot write to cart space"
-  | otherwise = error "Erroneous write detected!"
-
-writeRam16 :: Nes s -> Word16 -> Word16 -> ST s ()
-writeRam16 nes addr v = do
-  let (lo, hi) = splitW16 v
-  writeRam8 nes addr lo
-  writeRam8 nes (addr + 1) lo
+  Cpu r -> writeCPU nes r v
+  Ppu r -> writePPU (ppu nes) r v
 
 newCPU :: ST s (CPU s)
 newCPU = do
@@ -200,25 +163,59 @@ newCPU = do
   cycles <- newSTRef 0
   pure $ CPU pc sp a x y p ram cycles
 
-writeCPU :: CPU s -> CpuAddress a -> a -> ST s ()
-writeCPU cpu addr v = case addr of
-  Pc        -> modifySTRef' (pc cpu) (const v)
-  Sp        -> modifySTRef' (sp cpu) (const v)
-  A         -> modifySTRef' (a cpu) (const v)
-  X         -> modifySTRef' (x cpu) (const v)
-  Y         -> modifySTRef' (y cpu) (const v)
-  P         -> modifySTRef' (p cpu) (const v)
-  CpuCycles -> modifySTRef' (cycles cpu) (const v)
+writeCPU :: Nes s -> Cpu a -> a -> ST s ()
+writeCPU nes addr v = case addr of
+  Pc            -> modifySTRef' (pc $ cpu nes) (const v)
+  Sp            -> modifySTRef' (sp $ cpu nes) (const v)
+  A             -> modifySTRef' (a $ cpu nes) (const v)
+  X             -> modifySTRef' (x $ cpu nes) (const v)
+  Y             -> modifySTRef' (y $ cpu nes) (const v)
+  P             -> modifySTRef' (p $ cpu nes) (const v)
+  CpuCycles     -> modifySTRef' (cycles $ cpu nes) (const v)
+  CpuMemory8 r  -> writeCpuMemory8 nes r v
+  CpuMemory16 r -> writeCpuMemory16 nes r v
 
-readCPU :: CPU s -> CpuAddress a -> ST s a
-readCPU cpu addr = case addr of
-  Pc        -> readSTRef $ pc cpu
-  Sp        -> readSTRef $ sp cpu
-  A         -> readSTRef $ a cpu
-  X         -> readSTRef $ x cpu
-  Y         -> readSTRef $ y cpu
-  P         -> readSTRef $ p cpu
-  CpuCycles -> readSTRef $ cycles cpu
+readCPU :: Nes s -> Cpu a -> ST s a
+readCPU nes addr = case addr of
+  Pc            -> readSTRef $ pc $ cpu nes
+  Sp            -> readSTRef $ sp $ cpu nes
+  A             -> readSTRef $ a $ cpu nes
+  X             -> readSTRef $ x $ cpu nes
+  Y             -> readSTRef $ y $ cpu nes
+  P             -> readSTRef $ p $ cpu nes
+  CpuCycles     -> readSTRef $ cycles $ cpu nes
+  CpuMemory8 r  -> readCpuMemory8 nes r
+  CpuMemory16 r -> readCpuMemory16 nes r
+
+readCpuMemory8 :: Nes s -> Word16 -> ST s Word8
+readCpuMemory8 nes addr
+  | addr < 0x2000 = VUM.read (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
+  | addr < 0x4000 = readPPURegister (ppu nes) addr
+  | addr >= 0x4000 && addr <= 0x4017 = error "IO read not implemented!"
+  | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
+  | addr >= 0x6000 && addr <= 0xFFFF = pure $ readRom (mapper nes) addr
+  | otherwise = error "Erroneous read detected!"
+
+readCpuMemory16 :: Nes s -> Word16 -> ST s Word16
+readCpuMemory16 nes addr = do
+  lo <- readCpuMemory8 nes addr
+  hi <- readCpuMemory8 nes (addr + 1)
+  pure $ makeW16 lo hi
+
+writeCpuMemory8 :: Nes s -> Word16 -> Word8 -> ST s ()
+writeCpuMemory8 nes addr v
+  | addr < 0x2000 = VUM.write (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
+  | addr < 0x4000 = writePPURegister nes addr v
+  | addr >= 0x4000 && addr <= 0x4017 = pure ()
+  | addr >= 0x4018 && addr <= 0x401F = error "APU write not implemented"
+  | addr >= 0x4020 && addr <= 0xFFFF = error "Cannot write to cart space"
+  | otherwise = error "Erroneous write detected!"
+
+writeCpuMemory16 :: Nes s -> Word16 -> Word16 -> ST s ()
+writeCpuMemory16 nes addr v = do
+  let (lo, hi) = splitW16 v
+  writeCpuMemory8 nes addr lo
+  writeCpuMemory8 nes (addr + 1) lo
 
 newPPU :: ST s (PPU s)
 newPPU = do
@@ -229,13 +226,15 @@ newPPU = do
   writeToggle <- newSTRef False
   -- Data
   oamData <- VUM.replicate 0x100 0x0
+  nameTableData <- VUM.replicate 0x800 0x0
+  paletteData <- VUM.replicate 0x20 0x0
   screen <- VUM.replicate (256 * 240) (0, 0, 0)
   -- Addresses
   currentVramAddress <- newSTRef 0x0
   tempVramAddress <- newSTRef 0x0
   oamAddress <- newSTRef 0x0
   -- Control register
-  nameTable <- newSTRef NameTable2000
+  nameTable <- newSTRef 0x2000
   incrementMode <- newSTRef Horizontal
   spriteTable <- newSTRef SpriteTable0000
   bgTable <- newSTRef BackgroundTable0000
@@ -260,7 +259,7 @@ newPPU = do
     -- Misc
     cycles scanline frameCount writeToggle
     -- Data
-    oamData screen
+    oamData nameTableData paletteData screen
     -- Addresses
     currentVramAddress tempVramAddress oamAddress
     -- Control register
@@ -271,22 +270,59 @@ newPPU = do
     -- Status register
     lastWrite spriteOverflow spriteZeroHit vBlankStarted
 
-readPPU :: PPU s -> PpuAddress a -> ST s a
-readPPU ppu addr = case addr of
-  PpuCycles     -> readSTRef $ ppuCycles ppu
-  NameTableAddr -> readSTRef $ nameTable ppu
-  Scanline      -> readSTRef $ scanline ppu
-  FrameCount    -> readSTRef $ frameCount ppu
-  VBlank        -> readSTRef $ vBlank ppu
-  Screen coords -> VUM.read (screen ppu) (translateXY coords 256)
+readPPU :: Nes s -> Ppu a -> ST s a
+readPPU nes addr = case addr of
+  PpuCycles     -> readSTRef $ ppuCycles $ ppu nes
+  NameTableAddr -> readSTRef $ nameTable $ ppu nes
+  Scanline      -> readSTRef $ scanline $ ppu nes
+  FrameCount    -> readSTRef $ frameCount $ ppu nes
+  VBlank        -> readSTRef $ vBlank $ ppu nes
+  Screen coords -> VUM.read (screen $ ppu nes) (translateXY coords 256)
+  PpuMemory8 r  -> readPPUMemory nes r
 
-writePPU :: PPU s -> PpuAddress a -> a -> ST s ()
+writePPU :: PPU s -> Ppu a -> a -> ST s ()
 writePPU ppu addr v = case addr of
   PpuCycles     -> modifySTRef' (ppuCycles ppu) (const v)
   Scanline      -> modifySTRef' (scanline ppu) (const v)
   FrameCount    -> modifySTRef' (frameCount ppu) (const v)
   VBlank        -> modifySTRef' (vBlank ppu) (const v)
   Screen coords -> VUM.write (screen ppu) (translateXY coords 256) v
+
+readPPUMemory :: Nes s -> Word16 -> ST s Word8
+readPPUMemory nes addr
+  | addr < 0x2000 = error "Unimplemented cartridge read"
+  | addr < 0x3F00 = VUM.read (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  | addr < 0x4000 = VUM.read (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
+  | otherwise = error "Erroneous read detected!"
+  where addr' = addr `mod` 0x4000
+
+writePPUMemory :: Nes s -> Word16 -> Word8 -> ST s ()
+writePPUMemory nes addr v
+  | addr < 0x2000 = error "Unimplemented cartridge write"
+  | addr < 0x3F00 = VUM.write (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
+  | addr < 0x4000 = VUM.write (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
+  | otherwise = error "Erroneous write detected!"
+  where addr' = addr `mod` 0x4000
+
+readPPURegister :: PPU s -> Word16 -> ST s Word8
+readPPURegister ppu addr = case (0x2000 + addr `mod` 8) of
+  0x2002 -> readStatus ppu
+  0x2004 -> readOAM ppu
+  0x2007 -> readData ppu
+  other  -> error $ "Unimplemented read at " ++ show addr
+
+readStatus :: PPU s -> ST s Word8
+readStatus ppu = do
+  vBlankV <- readSTRef $ vBlank ppu
+  let r = (fromEnum vBlankV) `shiftL` 7
+  modifySTRef' (vBlank ppu) (const False)
+  pure $ fromIntegral r
+
+readOAM :: PPU s -> ST s Word8
+readOAM ppu = error "Unimplemented PPU readOAM"
+
+readData :: PPU s -> ST s Word8
+readData ppu = error "Unimplemented PPU readData "
 
 writePPURegister :: Nes s -> Word16 -> Word8 -> ST s ()
 writePPURegister nes addr v = case (0x2000 + addr `mod` 8) of
@@ -296,21 +332,16 @@ writePPURegister nes addr v = case (0x2000 + addr `mod` 8) of
   0x2004 -> writeOAMData (ppu nes) v
   0x2005 -> writeScroll (ppu nes) v
   0x2006 -> writeAddress (ppu nes) v
-  0x2007 -> writeDMA nes v
-
-readPPURegister :: PPU s -> Word16 -> ST s Word8
-readPPURegister ppu addr = case (0x2000 + addr `mod` 8) of
-  0x2002 -> readStatus ppu
-  0x2004 -> readOAM ppu
-  0x2007 -> readMemory ppu
+  0x2007 -> writeData nes v
+  0x4014 -> writeDMA nes v
 
 writeControl :: PPU s -> Word8 -> ST s ()
 writeControl ppu v = do
   modifySTRef' (nameTable ppu) $ const $ case (v `shiftR` 0) .&. 3 of
-    0 -> NameTable2000
-    1 -> NameTable2400
-    2 -> NameTable2800
-    3 -> NameTable2C00
+    0 -> 0x2000
+    1 -> 0x2400
+    2 -> 0x2800
+    3 -> 0x2C00
   modifySTRef' (incrementMode ppu) $ const $ case testBit v 2 of
     False -> Horizontal
     True  -> Vertical
@@ -374,25 +405,22 @@ writeDMA nes v = do
     write nes i addr =
       if i < 255 then do
         oamA <- readSTRef $ oamAddress (ppu nes)
-        oamV <- readRam8 nes (toWord16 addr)
+        oamV <- readCpuMemory8 nes (toWord16 addr)
         VUM.write (oamData $ ppu nes) (toInt oamA) oamV
         modifySTRef' (oamAddress (ppu nes)) (+ 1)
         write nes (i + 1) (addr + 1)
       else
         pure ()
 
-readStatus :: PPU s -> ST s Word8
-readStatus ppu = do
-  vBlankV <- readSTRef $ vBlank ppu
-  let r = (fromEnum vBlankV) `shiftL` 7
-  modifySTRef' (vBlank ppu) (const False)
-  pure $ fromIntegral r
-
-readOAM :: PPU s -> ST s Word8
-readOAM ppu = error $ "Unsupported PPU readOAM"
-
-readMemory :: PPU s -> ST s Word8
-readMemory ppu = error $ "Unsupported PPU readMemory "
+writeData :: Nes s -> Word8 -> ST s ()
+writeData nes v = do
+  addr <- readSTRef $ currentVramAddress (ppu nes)
+  writePPUMemory nes addr v
+  incMode <- readSTRef $ incrementMode (ppu nes)
+  let inc = case incMode of
+        Horizontal -> 1
+        Vertical   -> 32
+  modifySTRef' (currentVramAddress (ppu nes)) (+ inc)
 
 translateXY :: (Int, Int) -> Int -> Int
 translateXY (x, y) width = x + (y * width)

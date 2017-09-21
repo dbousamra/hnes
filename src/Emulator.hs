@@ -36,7 +36,7 @@ runDebug fp startPc = do
   cart <- parseCartridge <$> BS.readFile fp
   runIOEmulator cart $ do
     case startPc of
-      Just v  -> store (CpuAddress Pc) v
+      Just v  -> store (Cpu Pc) v
       Nothing -> reset
     emulateDebug 1000000000
 
@@ -56,12 +56,11 @@ step = do
   replicateM_ (cycles * 3) PPU.step
   pure trace
 
--- Step until 1 rendering occurs
 stepFrame :: (MonadIO m, MonadEmulator m) => m [Trace]
 stepFrame = do
-  frameCount <- load $ PpuAddress FrameCount
+  frameCount <- load $ Ppu FrameCount
   untilM step $ do
-    frameCount' <- load $ PpuAddress FrameCount
+    frameCount' <- load $ Ppu FrameCount
     pure $ frameCount' == (frameCount + 1)
 
 reset :: MonadEmulator m => m ()

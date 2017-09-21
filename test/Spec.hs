@@ -2,9 +2,9 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Emulator               (step)
-import           Emulator.Address
 import           Emulator.Cartridge
 import           Emulator.Monad
+import           Emulator.Nes
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util          (prettifyWord16)
 import           Nestest.Parsing        (parseTrace)
@@ -23,7 +23,7 @@ nestest = testCase "nestest" $ do
   cart <- parseCartridge <$> BS.readFile "roms/nestest.nes"
   lines <- lines <$> readFile "roms/nestest.log"
   runIOEmulator cart $ do
-    store (CpuAddress Pc) 0xC000
+    store (Cpu Pc) 0xC000
     emulate lines
   where
     emulate :: (MonadEmulator m, MonadIO m) => [String] -> m ()
