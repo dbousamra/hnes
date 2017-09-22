@@ -23,7 +23,7 @@ main = do
   window <- liftIO $ SDL.createWindow "hnes" config
   renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
   -- Create NES
-  cart <- parseCartridge <$> BS.readFile "roms/color_test.nes"
+  cart <- BS.readFile "roms/color_test.nes"
   runIOEmulator cart $ do
     reset
     appLoop renderer

@@ -23,7 +23,7 @@ renderScanline = do
   let row = y `mod` 8
 
   forM_ [0 .. tilesWide - 1] (\tx -> do
-    tileRow <- getTileRow nametable (tx, ty) row
+    -- tileRow <- getTileRow nametable (tx, ty) row
     r <- liftIO $ randomRIO (1, 255)
     g <- liftIO $ randomRIO (1, 255)
     b <- liftIO $ randomRIO (1, 255)
@@ -89,7 +89,6 @@ getTileRowPatterns :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> In
 getTileRowPatterns nameTableAddr (x, y) row = do
   let index = (y * tilesWide) + x
   let addr = 0x2000 + 0x400 * nameTableAddr + (fromIntegral index)
-  liftIO $ putStrLn $ show addr
   pattern <- load $ (Ppu $ PpuMemory8 addr)
   pure (1, 1)
 

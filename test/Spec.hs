@@ -20,9 +20,9 @@ tests = testGroup "Tests" [nestest]
 
 nestest :: TestTree
 nestest = testCase "nestest" $ do
-  cart <- parseCartridge <$> BS.readFile "roms/nestest.nes"
+  rom <- BS.readFile "roms/nestest.nes"
   lines <- lines <$> readFile "roms/nestest.log"
-  runIOEmulator cart $ do
+  runIOEmulator rom $ do
     store (Cpu Pc) 0xC000
     emulate lines
   where

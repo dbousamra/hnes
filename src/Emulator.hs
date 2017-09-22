@@ -14,7 +14,7 @@ import           Control.Monad.Loops
 import           Data.Bits              hiding (bit)
 import qualified Data.ByteString        as BS
 import           Data.Word
-import           Emulator.Cartridge
+import           Emulator.Cartridge     (parseCartridge)
 import qualified Emulator.CPU           as CPU
 import           Emulator.Monad
 import           Emulator.Nes
@@ -33,8 +33,8 @@ run fp = void $ runDebug fp Nothing
 
 runDebug :: FilePath -> Maybe Word16 -> IO [Trace]
 runDebug fp startPc = do
-  cart <- parseCartridge <$> BS.readFile fp
-  runIOEmulator cart $ do
+  bytes <-  BS.readFile fp
+  runIOEmulator bytes $ do
     case startPc of
       Just v  -> store (Cpu Pc) v
       Nothing -> reset

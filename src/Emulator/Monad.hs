@@ -9,6 +9,7 @@ module Emulator.Monad (
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.ST     (RealWorld, stToIO)
 import           Control.Monad.Trans  (MonadIO, lift)
+import qualified Data.ByteString      as BS
 import           Emulator.Cartridge
 import           Emulator.Nes         as Nes
 
@@ -29,7 +30,8 @@ instance MonadEmulator IOEmulator where
     mem <- ask
     lift $ stToIO $ Nes.write mem address word
 
-runIOEmulator :: Cartridge -> IOEmulator a ->  IO a
-runIOEmulator cart (IOEmulator reader) = do
+runIOEmulator :: BS.ByteString -> IOEmulator a ->  IO a
+runIOEmulator bs (IOEmulator reader) = do
+  cart <- stToIO $ parseCartridge bs
   mem <- stToIO $ Nes.new cart
   runReaderT reader mem

@@ -43,9 +43,9 @@ data ColorMode = Color | Grayscale
 data Visibility = Hidden | Shown
 
 data Nes s = Nes {
-  cpu    :: CPU s,
-  ppu    :: PPU s,
-  mapper :: Mapper
+  cpu  :: CPU s,
+  ppu  :: PPU s,
+  cart :: Cartridge s
 }
 
 data CPU s = CPU {
@@ -134,12 +134,11 @@ data Flag
   | Carry
   deriving (Enum)
 
-new :: Cartridge -> ST s (Nes s)
+new :: Cartridge s -> ST s (Nes s)
 new cart = do
-  mapper <- pure $ mapper0 cart
   cpu <- newCPU
   ppu <- newPPU
-  pure $ Nes cpu ppu mapper
+  pure $ Nes cpu ppu cart
 
 read :: Nes s -> Address a -> ST s a
 read nes addr = case addr of
@@ -193,7 +192,7 @@ readCpuMemory8 nes addr
   | addr < 0x4000 = readPPURegister (ppu nes) addr
   | addr >= 0x4000 && addr <= 0x4017 = error "IO read not implemented!"
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
-  | addr >= 0x6000 && addr <= 0xFFFF = pure $ readRom (mapper nes) addr
+  | addr >= 0x6000 && addr <= 0xFFFF = readCart (cart nes) addr
   | otherwise = error "Erroneous read detected!"
 
 readCpuMemory16 :: Nes s -> Word16 -> ST s Word16
