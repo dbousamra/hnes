@@ -93,12 +93,14 @@ getTileRowPatterns :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> In
 getTileRowPatterns nameTableAddr (x, y) row = do
   let index = (y * tilesWide) + x
   let addr = 0x2000 + 0x400 * nameTableAddr + (fromIntegral index)
-  liftIO $ putStrLn $ show addr
   pattern <- load $ (Ppu $ PpuMemory8 addr)
+  liftIO $ putStrLn (show addr)
+  if (pattern /= 0) then error "ERROR" else pure ()
   pure (1, 1)
 
 getTileRow :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> Int -> m [Word8]
 getTileRow nameTableAddr coords row = do
+
   patterns <- getTileRowPatterns nameTableAddr coords row
   pure []
 
