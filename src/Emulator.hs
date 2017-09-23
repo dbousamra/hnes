@@ -14,7 +14,6 @@ import           Control.Monad.Loops
 import           Data.Bits              hiding (bit)
 import qualified Data.ByteString        as BS
 import           Data.Word
-import           Emulator.Cartridge     (parseCartridge)
 import qualified Emulator.CPU           as CPU
 import           Emulator.Monad
 import           Emulator.Nes
@@ -26,7 +25,7 @@ import           Prelude                hiding (and, compare)
 import           Text.Printf            (printf)
 
 r :: IO ()
-r = void $ runDebug "roms/color_test.nes" Nothing
+r = void $ runDebug "roms/1942.nes" Nothing
 
 run :: FilePath -> IO ()
 run fp = void $ runDebug fp Nothing
@@ -53,6 +52,8 @@ emulateDebug n = go 0 n [] where
 step :: (MonadIO m, MonadEmulator m) => m Trace
 step = do
   (cycles, trace) <- CPU.step
+  liftIO $ putStrLn $ renderTrace trace
+  liftIO $ putStrLn $ "Cycles used and instruction cycles: " ++ (show cycles)
   replicateM_ (cycles * 3) PPU.step
   pure trace
 

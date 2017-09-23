@@ -34,6 +34,5 @@ nestest = testCase "nestest" $ do
         (x:xs) -> case parse parseTrace "nestest.log" x of
           Left e -> liftIO $ assertFailure $ "Failed to parse " ++ show e
           Right nestestTrace -> do
-            liftIO $ print trace
             liftIO $ assertEqual ("Execution at " ++ (prettifyWord16 $ pc trace)) nestestTrace trace
             emulate xs

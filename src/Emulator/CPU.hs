@@ -23,13 +23,15 @@ reset = do
 
 step :: (MonadIO m, MonadEmulator m) => m (Int, Trace)
 step = do
+  startingCycles <- load $ Cpu CpuCycles
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
   trace <- trace opcode addr
+  addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
-  cycles <- incrementCycles opcode pageCrossed
   runInstruction opcode addr
-  pure (cycles, trace)
+  endingCycles <- load $ Cpu CpuCycles
+  pure (endingCycles - startingCycles, trace)
 
 trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
 trace op addr = do
@@ -127,18 +129,13 @@ differentPages :: Word16 -> Word16 -> Bool
 differentPages a b = (a .&. 0xFF00) /= (b .&. 0xFF00)
 
 incrementPc :: MonadEmulator m => Opcode -> m ()
-incrementPc opcode = modify (Cpu Pc) (+  (fromIntegral $ (len opcode)))
+incrementPc opcode = modify (Cpu Pc) (+ instrLength)
+  where instrLength = fromIntegral $ (len opcode)
 
-incrementCycles :: (MonadIO m, MonadEmulator m) => Opcode -> Bool -> m Int
-incrementCycles opcode pageCrossed = do
-  addCycles $ fromIntegral cyclesToIncrementBy
-  pure cyclesToIncrementBy
-  where
-    base = (cycles opcode)
-    extra = (pageCrossCycles opcode)
-    cyclesToIncrementBy = case pageCrossed of
-      False -> base
-      True  -> base + extra
+getCycles :: Opcode -> Bool -> Int
+getCycles opcode pageCrossed = if pageCrossed
+  then pageCrossCycles opcode + cycles opcode
+  else cycles opcode
 
 modify :: MonadEmulator m => Address a -> (a -> a) -> m ()
 modify addr f = do
@@ -422,10 +419,11 @@ jsr addr = do
   store (Cpu Pc) addr
 
 -- LDA - Load accumulator register
-lda :: MonadEmulator m => Word16 -> m ()
+lda :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
 lda addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   store (Cpu A) v
+  av <- load $ Cpu A
   setZN v
 
 -- LDX - Load X Register
@@ -670,16 +668,11 @@ rra mode addr = ror mode addr >> adc addr
 -- Moves execution to addr if condition is set
 branch :: (MonadIO m, MonadEmulator m) => m Bool -> Word16 -> m ()
 branch cond addr = do
-  c <- cond
-  if c then do
+  cv <- cond
+  when cv $ do
     store (Cpu Pc) addr
-    if differentPages addr addr then
-      addCycles 2
-    else
-      addCycles 1
-  else
-    pure ()
-
+    let cycles = if differentPages addr addr then 2 else 1
+    addCycles cycles
 
 read16Bug :: MonadEmulator m => Word16 -> m Word16
 read16Bug addr = do

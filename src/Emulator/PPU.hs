@@ -13,17 +13,20 @@ import           Emulator.Util
 import           System.Random
 
 reset :: MonadEmulator m => m ()
-reset = pure ()
+reset = do
+  store (Ppu PpuCycles) 340
+  store (Ppu Scanline) 240
+  store (Ppu VerticalBlank) False
 
 renderScanline :: (MonadIO m, MonadEmulator m) => m ()
 renderScanline = do
-  y <- load (Ppu Scanline)
   nametable <- load (Ppu NameTableAddr)
+  y <- load (Ppu Scanline)
   let ty = y `div` 8
   let row = y `mod` 8
 
   forM_ [0 .. tilesWide - 1] (\tx -> do
-    -- tileRow <- getTileRow nametable (tx, ty) row
+    tileRow <- getTileRow nametable (tx, ty) row
     r <- liftIO $ randomRIO (1, 255)
     g <- liftIO $ randomRIO (1, 255)
     b <- liftIO $ randomRIO (1, 255)
@@ -58,16 +61,17 @@ step = do
   when (scanline < 240 && cycles == 1) $
     renderScanline
 
-  -- Enter VBlank period
+  -- Enter Vertical blank period
   when ((scanline == 241 && cycles == 1)) $
-    store (Ppu VBlank) True
+    store (Ppu VerticalBlank) True
 
-  -- Exit VBlank period
+  -- Exit Vertical blank period
   when ((scanline == 261 && cycles == 1)) $
-    store (Ppu VBlank) False
+    store (Ppu VerticalBlank) False
 
-tick :: MonadEmulator m => m ()
+tick :: (MonadIO m, MonadEmulator m) => m ()
 tick = do
+  liftIO $ putStrLn "Starting tick"
   modify (Ppu PpuCycles) (+1)
   cycles <- load $ Ppu PpuCycles
 
@@ -89,13 +93,13 @@ getTileRowPatterns :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> In
 getTileRowPatterns nameTableAddr (x, y) row = do
   let index = (y * tilesWide) + x
   let addr = 0x2000 + 0x400 * nameTableAddr + (fromIntegral index)
+  liftIO $ putStrLn $ show addr
   pattern <- load $ (Ppu $ PpuMemory8 addr)
   pure (1, 1)
 
 getTileRow :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> Int -> m [Word8]
 getTileRow nameTableAddr coords row = do
   patterns <- getTileRowPatterns nameTableAddr coords row
-  liftIO $ putStrLn $ show patterns
   pure []
 
 getColor :: Word8 -> (Word8, Word8, Word8)

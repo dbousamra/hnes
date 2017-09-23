@@ -94,7 +94,10 @@ data PPU s = PPU {
   lastWrite             :: STRef s Word8,
   spriteOverflow        :: STRef s Bool,
   spriteZeroHit         :: STRef s Bool,
-  vBlank                :: STRef s Bool
+  verticalBlank         :: STRef s Bool,
+
+  -- Scroll register
+  scrollXY              :: STRef s Word16
 }
 
 -- GADTs are used to represent addressing
@@ -114,7 +117,7 @@ data Ppu a where
   Scanline :: Ppu Int
   FrameCount :: Ppu Int
   NameTableAddr :: Ppu Word16
-  VBlank :: Ppu Bool
+  VerticalBlank :: Ppu Bool
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
   Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
@@ -253,6 +256,8 @@ newPPU = do
   spriteOverflow <- newSTRef False
   spriteZeroHit <- newSTRef False
   vBlankStarted <- newSTRef False
+  -- Scroll register
+  scrollXY <- newSTRef 0x0000
 
   pure $ PPU
     -- Misc
@@ -268,6 +273,8 @@ newPPU = do
     intensifyReds intensifyGreens intensifyBlues
     -- Status register
     lastWrite spriteOverflow spriteZeroHit vBlankStarted
+    -- Scroll register
+    scrollXY
 
 readPPU :: Nes s -> Ppu a -> ST s a
 readPPU nes addr = case addr of
@@ -275,7 +282,7 @@ readPPU nes addr = case addr of
   NameTableAddr -> readSTRef $ nameTable $ ppu nes
   Scanline      -> readSTRef $ scanline $ ppu nes
   FrameCount    -> readSTRef $ frameCount $ ppu nes
-  VBlank        -> readSTRef $ vBlank $ ppu nes
+  VerticalBlank -> readSTRef $ verticalBlank $ ppu nes
   Screen coords -> VUM.read (screen $ ppu nes) (translateXY coords 256)
   PpuMemory8 r  -> readPPUMemory nes r
 
@@ -284,12 +291,12 @@ writePPU ppu addr v = case addr of
   PpuCycles     -> modifySTRef' (ppuCycles ppu) (const v)
   Scanline      -> modifySTRef' (scanline ppu) (const v)
   FrameCount    -> modifySTRef' (frameCount ppu) (const v)
-  VBlank        -> modifySTRef' (vBlank ppu) (const v)
+  VerticalBlank -> modifySTRef' (verticalBlank ppu) (const v)
   Screen coords -> VUM.write (screen ppu) (translateXY coords 256) v
 
 readPPUMemory :: Nes s -> Word16 -> ST s Word8
 readPPUMemory nes addr
-  | addr < 0x2000 = error "Unimplemented cartridge read"
+  | addr < 0x2000 = readCart (cart nes) addr
   | addr < 0x3F00 = VUM.read (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
   | addr < 0x4000 = VUM.read (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
   | otherwise = error "Erroneous read detected!"
@@ -297,7 +304,7 @@ readPPUMemory nes addr
 
 writePPUMemory :: Nes s -> Word16 -> Word8 -> ST s ()
 writePPUMemory nes addr v
-  | addr < 0x2000 = error "Unimplemented cartridge write"
+  | addr < 0x2000 = writeCart (cart nes) addr v
   | addr < 0x3F00 = VUM.write (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
   | addr < 0x4000 = VUM.write (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
   | otherwise = error "Erroneous write detected!"
@@ -312,9 +319,9 @@ readPPURegister ppu addr = case (0x2000 + addr `mod` 8) of
 
 readStatus :: PPU s -> ST s Word8
 readStatus ppu = do
-  vBlankV <- readSTRef $ vBlank ppu
+  vBlankV <- readSTRef $ verticalBlank ppu
   let r = (fromEnum vBlankV) `shiftL` 7
-  modifySTRef' (vBlank ppu) (const False)
+  modifySTRef' (verticalBlank ppu) (const False)
   pure $ fromIntegral r
 
 readOAM :: PPU s -> ST s Word8
@@ -383,7 +390,9 @@ writeOAMData :: PPU s -> Word8 -> ST s ()
 writeOAMData ppu v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
 
 writeScroll :: PPU s -> Word8 -> ST s ()
-writeScroll ppu v = error $ "Unimplemented writeScroll at " ++ prettifyWord8 v
+writeScroll ppu v = do
+  modifySTRef' (scrollXY ppu) (`shiftL` 8)
+  modifySTRef' (scrollXY ppu) (.|. (toWord16 v))
 
 writeAddress :: PPU s -> Word8 -> ST s ()
 writeAddress ppu v = do
@@ -423,3 +432,4 @@ writeData nes v = do
 
 translateXY :: (Int, Int) -> Int -> Int
 translateXY (x, y) width = x + (y * width)
+
