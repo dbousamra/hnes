@@ -20,7 +20,7 @@ reset = do
   store (Ppu Scanline) 240
   store (Ppu VerticalBlank) False
 
-renderScanline :: (MonadIO m, MonadEmulator m) => m ()
+renderScanline :: MonadEmulator m => m ()
 renderScanline = do
   nametable <- load (Ppu NameTableAddr)
   y <- load (Ppu Scanline)
@@ -38,7 +38,7 @@ renderScanline = do
       store addr color
       ))
 
-step :: (MonadIO m, MonadEmulator m) => m ()
+step :: MonadEmulator m => m ()
 step = do
   -- Update the counters, cycles etc
   tick
@@ -58,7 +58,7 @@ step = do
   when ((scanline == 261 && cycles == 1)) $
     store (Ppu VerticalBlank) False
 
-tick :: (MonadIO m, MonadEmulator m) => m ()
+tick :: MonadEmulator m => m ()
 tick = do
   modify (Ppu PpuCycles) (+1)
   cycles <- load $ Ppu PpuCycles
@@ -77,7 +77,7 @@ modify addr f = do
   av <- load addr
   store addr (f av)
 
-getTileRowPatterns :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> Int -> m (Word8, Word8)
+getTileRowPatterns :: MonadEmulator m => Word16 -> (Int, Int) -> Int -> m (Word8, Word8)
 getTileRowPatterns nameTableAddr (x, y) row = do
   let index = (y * tilesWide) + x
   let addr = 0x2000 + 0x400 * nameTableAddr + (fromIntegral index)
@@ -91,7 +91,7 @@ getTileRowPatterns nameTableAddr (x, y) row = do
   pattern2 <- load (Ppu $ PpuMemory8 patternAddr2)
   pure (pattern1, pattern2)
 
-getTileRow :: (MonadIO m, MonadEmulator m) => Word16 -> (Int, Int) -> Int -> m [Word8]
+getTileRow :: MonadEmulator m => Word16 -> (Int, Int) -> Int -> m [Word8]
 getTileRow nameTableAddr coords row = do
   (pattern1, pattern2) <- getTileRowPatterns nameTableAddr coords row
   let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]

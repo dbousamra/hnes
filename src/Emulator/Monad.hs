@@ -21,9 +21,11 @@ newtype IOEmulator a = IOEmulator (ReaderT (Nes RealWorld)  IO a)
   deriving (Functor, Applicative, Monad, MonadIO)
 
 instance MonadEmulator IOEmulator where
+  {-# INLINE load #-}
   load address = IOEmulator $ do
     nes <- ask
     lift $ stToIO $ Nes.read nes address
+  {-# INLINE store #-}
   store address word = IOEmulator $ do
     nes <- ask
     lift $ stToIO $ Nes.write nes address word

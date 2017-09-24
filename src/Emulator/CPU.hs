@@ -21,7 +21,7 @@ reset = do
   store (Cpu Sp) 0xFD
   store (Cpu P) 0x24
 
-step :: (MonadIO m, MonadEmulator m) => m (Int, Trace)
+step :: MonadEmulator m => m (Int, Trace)
 step = do
   startingCycles <- load $ Cpu CpuCycles
   opcode <- loadNextOpcode
@@ -142,7 +142,7 @@ modify addr f = do
   av <- load addr
   store addr (f av)
 
-runInstruction :: (MonadIO m, MonadEmulator m) => Opcode -> (Word16 -> m ())
+runInstruction :: MonadEmulator m => Opcode -> (Word16 -> m ())
 runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   ADC -> adc
   AND -> and
@@ -260,31 +260,31 @@ and addr = do
   setZN av'
 
 -- BCC - Branch on carry flag clear
-bcc :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bcc :: MonadEmulator m => Word16 -> m ()
 bcc = branch $ not <$> getFlag Carry
 
 -- BCS - Branch on carry flag set
-bcs :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bcs :: MonadEmulator m => Word16 -> m ()
 bcs = branch $ getFlag Carry
 
 -- BEQ - Branch if zero set
-beq :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+beq :: MonadEmulator m => Word16 -> m ()
 beq = branch $ getFlag Zero
 
 -- BMI - Branch if minus
-bmi :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bmi :: MonadEmulator m => Word16 -> m ()
 bmi = branch $ getFlag Negative
 
 -- BPL - Branch if positive
-bpl :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bpl :: MonadEmulator m => Word16 -> m ()
 bpl = branch $ not <$> getFlag Negative
 
 -- BVS - Branch if overflow clear
-bvc :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bvc :: MonadEmulator m => Word16 -> m ()
 bvc = branch $ not <$> getFlag Overflow
 
 -- BVS - Branch if overflow set
-bvs :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bvs :: MonadEmulator m => Word16 -> m ()
 bvs = branch $ getFlag Overflow
 
 -- BRK - Force interrupt
@@ -298,7 +298,7 @@ brk addr = do
   store (Cpu Pc) av
 
 -- BIT - Test Bits in memory with A
-bit :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bit :: MonadEmulator m => Word16 -> m ()
 bit addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   av <- load $ Cpu A
@@ -308,7 +308,7 @@ bit addr = do
   setN v
 
 -- BNE - Branch if zero not set
-bne :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+bne :: MonadEmulator m => Word16 -> m ()
 bne = branch $ not <$> getFlag Zero
 
 -- CLC - Clear carry flag
@@ -419,7 +419,7 @@ jsr addr = do
   store (Cpu Pc) addr
 
 -- LDA - Load accumulator register
-lda :: (MonadIO m, MonadEmulator m) => Word16 -> m ()
+lda :: MonadEmulator m => Word16 -> m ()
 lda addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   store (Cpu A) v
@@ -666,7 +666,7 @@ rra :: MonadEmulator m => AddressMode -> Word16 -> m ()
 rra mode addr = ror mode addr >> adc addr
 
 -- Moves execution to addr if condition is set
-branch :: (MonadIO m, MonadEmulator m) => m Bool -> Word16 -> m ()
+branch :: MonadEmulator m => m Bool -> Word16 -> m ()
 branch cond addr = do
   cv <- cond
   when cv $ do
