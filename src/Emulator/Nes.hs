@@ -26,6 +26,7 @@ import           Data.STRef
 import qualified Data.Vector.Unboxed         as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
+import           Debug.Trace
 import           Emulator.Cartridge
 import           Emulator.Util
 import           Prelude                     hiding (cycles, read, replicate)
@@ -72,7 +73,6 @@ data PPU s = PPU {
   screen                :: VUM.MVector s (Word8, Word8, Word8),
   -- Addresses
   currentVramAddress    :: STRef s Word16,
-  tempVramAddress       :: STRef s Word16,
   oamAddress            :: STRef s Word8,
   -- Control register bits
   nameTable             :: STRef s Word16,
@@ -117,7 +117,9 @@ data Ppu a where
   Scanline :: Ppu Int
   FrameCount :: Ppu Int
   NameTableAddr :: Ppu Word16
+  BackgroundTableAddr :: Ppu BackgroundTableAddr
   VerticalBlank :: Ppu Bool
+  PaletteData :: Int -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
   Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
@@ -265,7 +267,7 @@ newPPU = do
     -- Data
     oamData nameTableData paletteData screen
     -- Addresses
-    currentVramAddress tempVramAddress oamAddress
+    currentVramAddress oamAddress
     -- Control register
     nameTable incrementMode spriteTable bgTable spriteSize nmiEnabled
     -- Mask register
@@ -278,13 +280,15 @@ newPPU = do
 
 readPPU :: Nes s -> Ppu a -> ST s a
 readPPU nes addr = case addr of
-  PpuCycles     -> readSTRef $ ppuCycles $ ppu nes
-  NameTableAddr -> readSTRef $ nameTable $ ppu nes
-  Scanline      -> readSTRef $ scanline $ ppu nes
-  FrameCount    -> readSTRef $ frameCount $ ppu nes
-  VerticalBlank -> readSTRef $ verticalBlank $ ppu nes
-  Screen coords -> VUM.read (screen $ ppu nes) (translateXY coords 256)
-  PpuMemory8 r  -> readPPUMemory nes r
+  PpuCycles           -> readSTRef $ ppuCycles $ ppu nes
+  NameTableAddr       -> readSTRef $ nameTable $ ppu nes
+  Scanline            -> readSTRef $ scanline $ ppu nes
+  FrameCount          -> readSTRef $ frameCount $ ppu nes
+  VerticalBlank       -> readSTRef $ verticalBlank $ ppu nes
+  BackgroundTableAddr -> readSTRef $ bgTable $ ppu nes
+  PaletteData i       -> VUM.read (paletteData $ ppu nes) i
+  Screen coords       -> VUM.read (screen $ ppu nes) (translateXY coords 256)
+  PpuMemory8 r        -> readPPUMemory nes r
 
 writePPU :: PPU s -> Ppu a -> a -> ST s ()
 writePPU ppu addr v = case addr of
@@ -296,17 +300,17 @@ writePPU ppu addr v = case addr of
 
 readPPUMemory :: Nes s -> Word16 -> ST s Word8
 readPPUMemory nes addr
-  | addr < 0x2000 = readCart (cart nes) addr
-  | addr < 0x3F00 = VUM.read (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
-  | addr < 0x4000 = VUM.read (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
+  | addr' < 0x2000 = readCart (cart nes) addr'
+  | addr' < 0x3F00 = VUM.read (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  | addr' < 0x4000 = VUM.read (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
 
 writePPUMemory :: Nes s -> Word16 -> Word8 -> ST s ()
 writePPUMemory nes addr v
-  | addr < 0x2000 = writeCart (cart nes) addr v
-  | addr < 0x3F00 = VUM.write (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
-  | addr < 0x4000 = VUM.write (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
+  | addr' < 0x2000 = writeCart (cart nes) addr' v
+  | addr' < 0x3F00 = VUM.write (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
+  | addr' < 0x4000 = VUM.write (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
@@ -397,11 +401,11 @@ writeScroll ppu v = do
 writeAddress :: PPU s -> Word8 -> ST s ()
 writeAddress ppu v = do
   wt <- readSTRef $ writeToggle ppu
-  tVrV <- readSTRef $ tempVramAddress ppu
+  tVrV <- readSTRef $ currentVramAddress ppu
   let v' = case wt of
         False -> (tVrV .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
         True  -> (tVrV .&. 0xFF00) .|. (toWord16 v)
-  modifySTRef' (tempVramAddress ppu) (const v')
+  modifySTRef' (currentVramAddress ppu) (const v')
   modifySTRef' (writeToggle ppu) (const $ not wt)
 
 writeDMA :: Nes s -> Word8 -> ST s ()
@@ -432,4 +436,3 @@ writeData nes v = do
 
 translateXY :: (Int, Int) -> Int -> Int
 translateXY (x, y) width = x + (y * width)
-
