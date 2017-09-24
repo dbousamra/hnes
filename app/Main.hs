@@ -7,35 +7,42 @@ import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Emulator               (emulateDebug, reset, run, step,
                                          stepFrame)
-import           Emulator.Monad         (MonadEmulator (..), runIOEmulator)
+import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Trace         (renderTrace)
 import           Foreign.C.Types
 import           SDL                    as SDL
 import           System.Environment     (getArgs)
 
--- main = do
---   cart <- BS.readFile "roms/1942.nes"
---   runIOEmulator cart $ do
---     reset
---     loop
-
-main :: IO ()
 main = do
-  -- Set up SDL
-  liftIO $ SDL.initializeAll
-  let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
-  window <- liftIO $ SDL.createWindow "hnes" config
-  renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
-  -- Create NES
-  cart <- BS.readFile "roms/nestest.nes"
+  cart <- BS.readFile "roms/1942.nes"
   runIOEmulator cart $ do
     reset
-    appLoop renderer
+    loop
 
-appLoop :: (MonadIO m, MonadEmulator m) => SDL.Renderer -> m ()
+loop :: IOEmulator ()
+loop = do
+  stepFrame
+  liftIO $ putStrLn "Stepping"
+  loop
+
+-- main :: IO ()
+-- main = do
+--   -- Set up SDL
+--   liftIO $ SDL.initializeAll
+--   let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
+--   window <- liftIO $ SDL.createWindow "hnes" config
+--   renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
+--   -- Create NES
+--   cart <- BS.readFile "roms/nestest.nes"
+--   runIOEmulator cart $ do
+--     reset
+--     appLoop renderer
+
+appLoop :: SDL.Renderer -> IOEmulator ()
 appLoop renderer = do
   traces <- stepFrame
+  liftIO $ putStrLn "Stepping"
   events <- liftIO $ SDL.pollEvents
   let eventIsQPress event =
         case eventPayload event of
@@ -49,7 +56,7 @@ appLoop renderer = do
   liftIO $ SDL.present renderer
   unless qPressed (appLoop renderer)
 
-render :: (MonadIO m, MonadEmulator m) => SDL.Renderer -> m ()
+render :: SDL.Renderer -> IOEmulator ()
 render renderer = do
   let scale = 2
 

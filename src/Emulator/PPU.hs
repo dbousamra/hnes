@@ -14,13 +14,13 @@ import           Emulator.Nes
 import           Emulator.Util
 import           System.Random
 
-reset :: MonadEmulator m => m ()
+reset :: IOEmulator ()
 reset = do
   store (Ppu PpuCycles) 340
   store (Ppu Scanline) 240
   store (Ppu VerticalBlank) False
 
-renderScanline :: MonadEmulator m => m ()
+renderScanline :: IOEmulator ()
 renderScanline = do
   nametable <- load (Ppu NameTableAddr)
   y <- load (Ppu Scanline)
@@ -38,7 +38,7 @@ renderScanline = do
       store addr color
       ))
 
-step :: MonadEmulator m => m ()
+step :: IOEmulator ()
 step = do
   -- Update the counters, cycles etc
   tick
@@ -58,7 +58,7 @@ step = do
   when ((scanline == 261 && cycles == 1)) $
     store (Ppu VerticalBlank) False
 
-tick :: MonadEmulator m => m ()
+tick :: IOEmulator ()
 tick = do
   modify (Ppu PpuCycles) (+1)
   cycles <- load $ Ppu PpuCycles
@@ -72,12 +72,12 @@ tick = do
       modify (Ppu Scanline) (const 0)
       modify (Ppu FrameCount) (+1)
 
-modify :: MonadEmulator m => Address a -> (a -> a) -> m ()
+modify :: Address a -> (a -> a) -> IOEmulator ()
 modify addr f = do
   av <- load addr
   store addr (f av)
 
-getTileRowPatterns :: MonadEmulator m => Word16 -> (Int, Int) -> Int -> m (Word8, Word8)
+getTileRowPatterns :: Word16 -> (Int, Int) -> Int -> IOEmulator (Word8, Word8)
 getTileRowPatterns nameTableAddr (x, y) row = do
   let index = (y * tilesWide) + x
   let addr = 0x2000 + 0x400 * nameTableAddr + (fromIntegral index)
@@ -91,7 +91,7 @@ getTileRowPatterns nameTableAddr (x, y) row = do
   pattern2 <- load (Ppu $ PpuMemory8 patternAddr2)
   pure (pattern1, pattern2)
 
-getTileRow :: MonadEmulator m => Word16 -> (Int, Int) -> Int -> m [Word8]
+getTileRow :: Word16 -> (Int, Int) -> Int -> IOEmulator [Word8]
 getTileRow nameTableAddr coords row = do
   (pattern1, pattern2) <- getTileRowPatterns nameTableAddr coords row
   let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]

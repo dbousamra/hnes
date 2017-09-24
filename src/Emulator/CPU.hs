@@ -14,14 +14,14 @@ import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
 import           Prelude                hiding (and, compare, cycles)
 
-reset :: MonadEmulator m => m ()
+reset :: IOEmulator ()
 reset = do
   v <- load (Cpu $ CpuMemory16 0xFFFC)
   store (Cpu Pc) v
   store (Cpu Sp) 0xFD
   store (Cpu P) 0x24
 
-step :: MonadEmulator m => m (Int, Trace)
+step :: IOEmulator (Int, Trace)
 step = do
   startingCycles <- load $ Cpu CpuCycles
   opcode <- loadNextOpcode
@@ -33,7 +33,7 @@ step = do
   endingCycles <- load $ Cpu CpuCycles
   pure (endingCycles - startingCycles, trace)
 
-trace :: MonadEmulator m => Opcode -> Word16 -> m Trace
+trace :: Opcode -> Word16 -> IOEmulator Trace
 trace op addr = do
   pcv <- load $ Cpu Pc
   a0 <- load $ Cpu $ CpuMemory8 pcv
@@ -50,13 +50,13 @@ trace op addr = do
   let a2R = if instrLength < 3 then 0x0 else a2
   pure (Trace pcv spv av xv yv pv op a0 a1R a2R ((cycles * 3) `mod` 341))
 
-loadNextOpcode :: MonadEmulator m => m Opcode
+loadNextOpcode :: IOEmulator Opcode
 loadNextOpcode = do
   pcv <- load $ Cpu Pc
   av <- load (Cpu $ CpuMemory8 pcv)
   pure $ decodeOpcode av
 
-addressPageCrossForMode :: MonadEmulator m => AddressMode -> m (Bool, Word16)
+addressPageCrossForMode :: AddressMode -> IOEmulator (Bool, Word16)
 addressPageCrossForMode mode = case mode of
   Absolute -> do
     pcv <- load $ Cpu Pc
@@ -128,7 +128,7 @@ addressPageCrossForMode mode = case mode of
 differentPages :: Word16 -> Word16 -> Bool
 differentPages a b = (a .&. 0xFF00) /= (b .&. 0xFF00)
 
-incrementPc :: MonadEmulator m => Opcode -> m ()
+incrementPc :: Opcode -> IOEmulator ()
 incrementPc opcode = modify (Cpu Pc) (+ instrLength)
   where instrLength = fromIntegral $ (len opcode)
 
@@ -137,12 +137,12 @@ getCycles opcode pageCrossed = if pageCrossed
   then pageCrossCycles opcode + cycles opcode
   else cycles opcode
 
-modify :: MonadEmulator m => Address a -> (a -> a) -> m ()
+modify :: Address a -> (a -> a) -> IOEmulator ()
 modify addr f = do
   av <- load addr
   store addr (f av)
 
-runInstruction :: MonadEmulator m => Opcode -> (Word16 -> m ())
+runInstruction :: Opcode -> (Word16 -> IOEmulator ())
 runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   ADC -> adc
   AND -> and
@@ -223,7 +223,7 @@ runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
 -- Official instructions
 
 -- ADC - Add with carry
-adc :: MonadEmulator m => Word16 -> m ()
+adc :: Word16 -> IOEmulator ()
 adc addr = do
   av <- load $ Cpu A
   bv <- load $ Cpu $ CpuMemory8 addr
@@ -237,7 +237,7 @@ adc addr = do
   setFlag Overflow doesOverflow
 
 -- ASL - Arithmetic shift left
-asl :: MonadEmulator m => AddressMode -> Word16 -> m ()
+asl :: AddressMode -> Word16 -> IOEmulator ()
 asl mode addr = do
   v <- load dest
   let i = (v `shiftR` 7) .&. 1
@@ -251,7 +251,7 @@ asl mode addr = do
       other       -> Cpu $ CpuMemory8 addr
 
 -- AND - Logical and
-and :: MonadEmulator m => Word16 -> m ()
+and :: Word16 -> IOEmulator ()
 and addr = do
   av <- load $ Cpu A
   v <- load $ Cpu $ CpuMemory8 addr
@@ -260,35 +260,35 @@ and addr = do
   setZN av'
 
 -- BCC - Branch on carry flag clear
-bcc :: MonadEmulator m => Word16 -> m ()
+bcc :: Word16 -> IOEmulator ()
 bcc = branch $ not <$> getFlag Carry
 
 -- BCS - Branch on carry flag set
-bcs :: MonadEmulator m => Word16 -> m ()
+bcs :: Word16 -> IOEmulator ()
 bcs = branch $ getFlag Carry
 
 -- BEQ - Branch if zero set
-beq :: MonadEmulator m => Word16 -> m ()
+beq :: Word16 -> IOEmulator ()
 beq = branch $ getFlag Zero
 
 -- BMI - Branch if minus
-bmi :: MonadEmulator m => Word16 -> m ()
+bmi :: Word16 -> IOEmulator ()
 bmi = branch $ getFlag Negative
 
 -- BPL - Branch if positive
-bpl :: MonadEmulator m => Word16 -> m ()
+bpl :: Word16 -> IOEmulator ()
 bpl = branch $ not <$> getFlag Negative
 
 -- BVS - Branch if overflow clear
-bvc :: MonadEmulator m => Word16 -> m ()
+bvc :: Word16 -> IOEmulator ()
 bvc = branch $ not <$> getFlag Overflow
 
 -- BVS - Branch if overflow set
-bvs :: MonadEmulator m => Word16 -> m ()
+bvs :: Word16 -> IOEmulator ()
 bvs = branch $ getFlag Overflow
 
 -- BRK - Force interrupt
-brk :: MonadEmulator m => Word16 -> m ()
+brk :: Word16 -> IOEmulator ()
 brk addr = do
   pcv <- load $ Cpu Pc
   push16 pcv
@@ -298,7 +298,7 @@ brk addr = do
   store (Cpu Pc) av
 
 -- BIT - Test Bits in memory with A
-bit :: MonadEmulator m => Word16 -> m ()
+bit :: Word16 -> IOEmulator ()
 bit addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   av <- load $ Cpu A
@@ -308,48 +308,48 @@ bit addr = do
   setN v
 
 -- BNE - Branch if zero not set
-bne :: MonadEmulator m => Word16 -> m ()
+bne :: Word16 -> IOEmulator ()
 bne = branch $ not <$> getFlag Zero
 
 -- CLC - Clear carry flag
-clc :: MonadEmulator m => m ()
+clc :: IOEmulator ()
 clc = setFlag Carry False
 
 -- CLD - Clear decimal flag
-cld :: MonadEmulator m => m ()
+cld :: IOEmulator ()
 cld = setFlag Decimal False
 
 -- CLI - Clear interrupt flag
-cli :: MonadEmulator m => m ()
+cli :: IOEmulator ()
 cli = setFlag Interrupt False
 
 -- CLV - Clear overflow flag
-clv :: MonadEmulator m => m ()
+clv :: IOEmulator ()
 clv = setFlag Overflow False
 
 -- CMP - Compare memory and A
-cmp :: MonadEmulator m => Word16 -> m ()
+cmp :: Word16 -> IOEmulator ()
 cmp addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   av <- load $ Cpu A
   compare av v
 
 -- CPX - Compare memory and X
-cpx :: MonadEmulator m => Word16 -> m ()
+cpx :: Word16 -> IOEmulator ()
 cpx addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   xv <- load $ Cpu X
   compare xv v
 
 -- CPY - Compare memory and Y
-cpy :: MonadEmulator m => Word16 -> m ()
+cpy :: Word16 -> IOEmulator ()
 cpy addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   yv <- load $ Cpu Y
   compare yv v
 
 -- DEC - Decrement memory
-dec :: MonadEmulator m => Word16 -> m ()
+dec :: Word16 -> IOEmulator ()
 dec addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   let value = v - 1
@@ -357,7 +357,7 @@ dec addr = do
   setZN value
 
 -- DEX - Decrement X register
-dex :: MonadEmulator m => m ()
+dex :: IOEmulator ()
 dex = do
   v <- load $ Cpu X
   let value = v - 1
@@ -366,7 +366,7 @@ dex = do
 
 
 -- DEY - Decrement Y register
-dey :: MonadEmulator m => m ()
+dey :: IOEmulator ()
 dey = do
   v <- load $ Cpu Y
   let value = v - 1
@@ -374,7 +374,7 @@ dey = do
   setZN value
 
 -- EOR - Exclusive or
-eor :: MonadEmulator m => Word16 -> m ()
+eor :: Word16 -> IOEmulator ()
 eor addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   av <- load $ Cpu A
@@ -384,7 +384,7 @@ eor addr = do
 
 
 -- INC - Increment memory
-inc :: MonadEmulator m => Word16 -> m ()
+inc :: Word16 -> IOEmulator ()
 inc addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   let value = v + 1
@@ -392,7 +392,7 @@ inc addr = do
   setZN value
 
 -- INX - Increment X register
-inx :: MonadEmulator m => m ()
+inx :: IOEmulator ()
 inx  = do
   v <- load $ Cpu X
   let value = v + 1
@@ -400,7 +400,7 @@ inx  = do
   setZN value
 
 -- INY - Increment Y register
-iny :: MonadEmulator m => m ()
+iny :: IOEmulator ()
 iny  = do
   v <- load $ Cpu Y
   let value = v + 1
@@ -408,18 +408,18 @@ iny  = do
   setZN value
 
 -- JMP - Move execution to a particular address
-jmp :: MonadEmulator m => Word16 -> m ()
+jmp :: Word16 -> IOEmulator ()
 jmp = store $ Cpu Pc
 
 -- JSR - Jump to subroutine
-jsr :: MonadEmulator m => Word16 -> m ()
+jsr :: Word16 -> IOEmulator ()
 jsr addr = do
   pcv <- load $ Cpu Pc
   push16 $ pcv - 1
   store (Cpu Pc) addr
 
 -- LDA - Load accumulator register
-lda :: MonadEmulator m => Word16 -> m ()
+lda :: Word16 -> IOEmulator ()
 lda addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   store (Cpu A) v
@@ -427,21 +427,21 @@ lda addr = do
   setZN v
 
 -- LDX - Load X Register
-ldx :: MonadEmulator m => Word16 -> m ()
+ldx :: Word16 -> IOEmulator ()
 ldx addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   store (Cpu X) v
   setZN v
 
 -- LDY - Load Y Register
-ldy :: MonadEmulator m => Word16 -> m ()
+ldy :: Word16 -> IOEmulator ()
 ldy addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   store (Cpu Y) v
   setZN v
 
 -- LSR - Logical shift right
-lsr :: MonadEmulator m => AddressMode -> Word16 -> m ()
+lsr :: AddressMode -> Word16 -> IOEmulator ()
 lsr mode addr = do
   v <- load dest
   setFlag Carry (toEnum . fromIntegral $ v .&. 1)
@@ -454,36 +454,36 @@ lsr mode addr = do
       other       -> Cpu $ CpuMemory8 addr
 
 -- NOP - No operation. Do nothing :D
-nop :: MonadEmulator m => m ()
+nop :: IOEmulator ()
 nop = pure ()
 
 -- PHP - Push processor status onto stack
-php :: MonadEmulator m => m ()
+php :: IOEmulator ()
 php = do
   p <- load $ Cpu P
   push $ p .|. 0x10
 
 -- PLA - Pull Accumulator register
-pla :: MonadEmulator m => m ()
+pla :: IOEmulator ()
 pla = do
   v <- pull
   store (Cpu A) v
   setZN v
 
 -- PLP - Pull Accumulator register
-plp :: MonadEmulator m => m ()
+plp :: IOEmulator ()
 plp = do
   v <- pull
   store (Cpu P) ((v .&. 0xEF) .|. 0x20)
 
 -- PHA - Push Accumulator register
-pha :: MonadEmulator m => m ()
+pha :: IOEmulator ()
 pha = do
   av <- load $ Cpu A
   push av
 
 -- ORA - Logical Inclusive OR
-ora :: MonadEmulator m => Word16 -> m ()
+ora :: Word16 -> IOEmulator ()
 ora addr = do
   v <- load$ Cpu $ CpuMemory8 addr
   av <- load $ Cpu A
@@ -492,7 +492,7 @@ ora addr = do
   setZN newAv
 
 -- ROL - Rotate left
-rol :: MonadEmulator m => AddressMode -> Word16 -> m ()
+rol :: AddressMode -> Word16 -> IOEmulator ()
 rol mode addr = do
   v <- load dest
   cv <- (fromIntegral . fromEnum) <$> getFlag Carry
@@ -506,7 +506,7 @@ rol mode addr = do
       other       -> Cpu $ CpuMemory8 addr
 
 -- ROR - Rotate right
-ror :: MonadEmulator m => AddressMode -> Word16 -> m ()
+ror :: AddressMode -> Word16 -> IOEmulator ()
 ror mode addr = do
   v <- load dest
   cv <- (fromIntegral . fromEnum) <$> getFlag Carry
@@ -520,7 +520,7 @@ ror mode addr = do
       other       -> Cpu $ CpuMemory8 addr
 
 -- RTI - Return from interrupt
-rti :: MonadEmulator m => m ()
+rti :: IOEmulator ()
 rti = do
   addr <- pull
   store (Cpu P) (addr .&. 0xEf .|. 0x20)
@@ -528,13 +528,13 @@ rti = do
   store (Cpu Pc) addr'
 
 -- RTS - Return from a subroutine
-rts :: MonadEmulator m => m ()
+rts :: IOEmulator ()
 rts = do
   addr <- pull16
   store (Cpu Pc) (addr + 1)
 
 -- SBC - Subtract with carry
-sbc :: MonadEmulator m => Word16 -> m ()
+sbc :: Word16 -> IOEmulator ()
 sbc addr = do
   av <- load $ Cpu A
   bv <- load $ Cpu $ CpuMemory8 addr
@@ -548,33 +548,33 @@ sbc addr = do
   setFlag Overflow doesOverflow
 
 -- SEC - Set carry flag
-sec :: MonadEmulator m => m ()
+sec :: IOEmulator ()
 sec = setFlag Carry True
 
 -- SED - Set decimal flag
-sed :: MonadEmulator m => m ()
+sed :: IOEmulator ()
 sed = setFlag Decimal True
 
 -- SEI - Set interrupt flag
-sei :: MonadEmulator m => m ()
+sei :: IOEmulator ()
 sei = setFlag Interrupt True
 
 -- STA - Store Accumulator register
-sta :: MonadEmulator m => Word16 -> m ()
+sta :: Word16 -> IOEmulator ()
 sta addr = do
   av <- load $ Cpu A
   store (Cpu $ CpuMemory8 addr) av
 
 -- STX - Store X register
-stx :: MonadEmulator m => Word16 -> m ()
+stx :: Word16 -> IOEmulator ()
 stx addr = (load $ Cpu X) >>= (store $ Cpu $ CpuMemory8 addr)
 
 -- STY - Store Y register
-sty :: MonadEmulator m => Word16 -> m ()
+sty :: Word16 -> IOEmulator ()
 sty addr = (load $ Cpu Y) >>= (store $ Cpu $ CpuMemory8 addr)
 
 -- TAX - Transfer Accumulator to X
-tax :: MonadEmulator m => Word16 -> m ()
+tax :: Word16 -> IOEmulator ()
 tax addr = do
   av <- load $ Cpu A
   store (Cpu X) av
@@ -582,7 +582,7 @@ tax addr = do
   setZN xv
 
 -- TAY - Transfer Accumulator to Y
-tay :: MonadEmulator m => Word16 -> m ()
+tay :: Word16 -> IOEmulator ()
 tay addr =  do
   av <- load $ Cpu A
   store (Cpu Y) av
@@ -590,7 +590,7 @@ tay addr =  do
   setZN yv
 
 -- TSX - Transfer Stack Pointer to X
-tsx :: MonadEmulator m => Word16 -> m ()
+tsx :: Word16 -> IOEmulator ()
 tsx addr = do
   spv <- load $ Cpu Sp
   store (Cpu X) spv
@@ -598,7 +598,7 @@ tsx addr = do
   setZN xv
 
 -- TXA - Transfer X to Accumulator
-txa :: MonadEmulator m => Word16 -> m ()
+txa :: Word16 -> IOEmulator ()
 txa addr = do
   xv <- load $ Cpu X
   store (Cpu A) xv
@@ -606,13 +606,13 @@ txa addr = do
   setZN av
 
 -- TXS - Transfer X to Stack Pointer
-txs :: MonadEmulator m => m ()
+txs :: IOEmulator ()
 txs = do
   xv <- load $ Cpu X
   store (Cpu Sp) xv
 
 -- TYA - Transfer Y to Accumulator
-tya :: MonadEmulator m => m ()
+tya :: IOEmulator ()
 tya = do
   yv <- load $ Cpu Y
   store (Cpu A) yv
@@ -622,7 +622,7 @@ tya = do
 -- Illegal instructions:
 
 -- LAX - Load Accumulator and X with memory
-lax :: MonadEmulator m => Word16 -> m ()
+lax :: Word16 -> IOEmulator ()
 lax addr = do
   v <- load (Cpu $ CpuMemory8 addr)
   store (Cpu A) v
@@ -630,43 +630,43 @@ lax addr = do
   setZN v
 
 -- SAX - AND X register with Accumulator and store result in memory
-sax :: MonadEmulator m => Word16 -> m ()
+sax :: Word16 -> IOEmulator ()
 sax addr = do
   av <- load $ Cpu A
   xv <- load $ Cpu X
   store (Cpu $ CpuMemory8 addr) (av .&. xv)
 
 -- DCP - Subtract 1 from memory
-dcp :: MonadEmulator m => Word16 -> m ()
+dcp :: Word16 -> IOEmulator ()
 dcp addr = dec addr >> cmp addr
 
 -- ISC - INCs the contents of a memory location and then SBCs the result
 -- from the A register.
-isc :: MonadEmulator m => Word16 -> m ()
+isc :: Word16 -> IOEmulator ()
 isc addr = inc addr >> sbc addr
 
 -- RLA - ROLs the contents of a memory location and then ANDs the result with
 -- the Accumulator.
-rla :: MonadEmulator m => AddressMode -> Word16 -> m ()
+rla :: AddressMode -> Word16 -> IOEmulator ()
 rla mode addr = rol mode addr >> and addr
 
 -- SLO - ASLs the contents of a memory location and then ORs the result
 -- with the Accumulator.
-slo :: MonadEmulator m => AddressMode -> Word16 -> m ()
+slo :: AddressMode -> Word16 -> IOEmulator ()
 slo mode addr = asl mode addr >> ora addr
 
 -- SRE - LSRs the contents of a memory location and then EORs the result with
 -- the Accumulator.
-sre :: MonadEmulator m => AddressMode -> Word16 -> m ()
+sre :: AddressMode -> Word16 -> IOEmulator ()
 sre mode addr = lsr mode addr >> eor addr
 
 -- RRA - RORs the contents of a memory location and then ADCs the result with
 -- the Accumulator
-rra :: MonadEmulator m => AddressMode -> Word16 -> m ()
+rra :: AddressMode -> Word16 -> IOEmulator ()
 rra mode addr = ror mode addr >> adc addr
 
 -- Moves execution to addr if condition is set
-branch :: MonadEmulator m => m Bool -> Word16 -> m ()
+branch :: IOEmulator Bool -> Word16 -> IOEmulator ()
 branch cond addr = do
   cv <- cond
   when cv $ do
@@ -674,72 +674,72 @@ branch cond addr = do
     let cycles = if differentPages addr addr then 2 else 1
     addCycles cycles
 
-read16Bug :: MonadEmulator m => Word16 -> m Word16
+read16Bug :: Word16 -> IOEmulator Word16
 read16Bug addr = do
   lo <- load $ Cpu $ CpuMemory8 addr
   hi <- load $ Cpu $ CpuMemory8 $ (addr .&. 0xFF00) .|. (toWord16 $ (toWord8 addr) + 1)
   pure $ makeW16 lo hi
 
-getFlag :: MonadEmulator m => Flag -> m Bool
+getFlag :: Flag -> IOEmulator Bool
 getFlag flag = do
   v <- load $ Cpu P
   pure $ testBit v (7 - fromEnum flag)
 
-setFlag :: MonadEmulator m => Flag -> Bool -> m ()
+setFlag :: Flag -> Bool -> IOEmulator ()
 setFlag flag b = do
   v <- load $ Cpu P
   store (Cpu P) (opBit v (7 - fromEnum flag))
   where opBit = if b then setBit else clearBit
 
-pull :: MonadEmulator m => m Word8
+pull :: IOEmulator Word8
 pull = do
   spv <- load $ Cpu Sp
   store (Cpu Sp) (spv + 1)
   let i = 0x100 .|. (toWord16 spv + 1)
   load $ Cpu $ CpuMemory8 i
 
-pull16 :: MonadEmulator m => m Word16
+pull16 :: IOEmulator Word16
 pull16 = do
   lo <- pull
   hi <- pull
   pure $ makeW16 lo hi
 
-push :: MonadEmulator m => Word8 -> m ()
+push :: Word8 -> IOEmulator ()
 push v = do
   spv <- load $ Cpu Sp
   let i = 0x100 .|. (toWord16 spv)
   store (Cpu $ CpuMemory8 i) v
   store (Cpu Sp) (spv - 1)
 
-push16 :: MonadEmulator m => Word16 -> m ()
+push16 :: Word16 -> IOEmulator ()
 push16 v = do
   let (lo, hi) = splitW16 v
   push hi
   push lo
 
 -- Sets the zero flag
-setZ :: MonadEmulator m => Word8 -> m ()
+setZ :: Word8 -> IOEmulator ()
 setZ v = setFlag Zero (v == 0)
 
 -- Sets the negative flag
-setN :: MonadEmulator m => Word8 -> m ()
+setN :: Word8 -> IOEmulator ()
 setN v = setFlag Negative (v .&. 0x80 /= 0)
 
 -- Sets the overflow flag
-setV :: MonadEmulator m => Word8 -> m ()
+setV :: Word8 -> IOEmulator ()
 setV v = setFlag Overflow (v .&. 0x40 /= 0)
 
 -- Sets the zero flag and the negative flag
-setZN :: MonadEmulator m => Word8 -> m ()
+setZN :: Word8 -> IOEmulator ()
 setZN v = setZ v >> setN v
 
-compare :: MonadEmulator m => Word8 -> Word8 -> m ()
+compare :: Word8 -> Word8 -> IOEmulator ()
 compare a b = do
   setZN $ a - b
   setFlag Carry (a >= b)
 
-illegal :: MonadEmulator m => Mnemonic -> m ()
+illegal :: Mnemonic -> IOEmulator ()
 illegal mnemonic = pure ()
 
-addCycles :: MonadEmulator m => Int -> m ()
+addCycles :: Int -> IOEmulator ()
 addCycles n = modify (Cpu CpuCycles) (+ n)

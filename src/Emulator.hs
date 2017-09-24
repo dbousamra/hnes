@@ -39,30 +39,30 @@ runDebug fp startPc = do
       Nothing -> reset
     emulateDebug 1000000000
 
-emulate :: (MonadIO m, MonadEmulator m) => m ()
+emulate :: IOEmulator ()
 emulate = step >> emulate
 
-emulateDebug :: MonadEmulator m => Int -> m [Trace]
+emulateDebug :: Int -> IOEmulator [Trace]
 emulateDebug n = go 0 n [] where
   go c n acc = do
     trace <- step
     if c > n then pure acc
     else go (c + 1) n (acc ++ [trace])
 
-step :: MonadEmulator m => m Trace
+step :: IOEmulator Trace
 step = do
   (cycles, trace) <- CPU.step
   -- liftIO $ putStrLn $ renderTrace trace
   replicateM_ (cycles * 3) PPU.step
   pure trace
 
-stepFrame :: MonadEmulator m => m [Trace]
+stepFrame :: IOEmulator [Trace]
 stepFrame = do
   frameCount <- load $ Ppu FrameCount
   untilM step $ do
     frameCount' <- load $ Ppu FrameCount
     pure $ frameCount' == (frameCount + 1)
 
-reset :: MonadEmulator m => m ()
+reset :: IOEmulator ()
 reset = CPU.reset >> PPU.reset
 

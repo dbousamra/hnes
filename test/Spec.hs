@@ -26,7 +26,7 @@ nestest = testCase "nestest" $ do
     store (Cpu Pc) 0xC000
     emulate lines
   where
-    emulate :: (MonadEmulator m, MonadIO m) => [String] -> m ()
+    emulate :: [String] -> IOEmulator ()
     emulate lines = do
       trace <- step
       case lines of
