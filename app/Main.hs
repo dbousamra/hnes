@@ -14,31 +14,33 @@ import           Foreign.C.Types
 import           SDL                    as SDL
 import           System.Environment     (getArgs)
 
-main = do
-  cart <- BS.readFile "roms/1942.nes"
+main2 :: IO ()
+main2 = do
+  cart <- BS.readFile $ "roms/nestest.nes"
   runIOEmulator cart $ do
     reset
     replicateM_ 1000 $ do
       stepFrame
       liftIO $ putStrLn "Stepped 1 frame"
 
--- main :: IO ()
--- main = do
---   -- Set up SDL
---   liftIO $ SDL.initializeAll
---   let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
---   window <- liftIO $ SDL.createWindow "hnes" config
---   renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
---   -- Create NES
---   cart <- BS.readFile "roms/nestest.nes"
---   runIOEmulator cart $ do
---     reset
---     appLoop renderer
+main :: IO ()
+main = do
+  filename <- getArgs
+  -- Set up SDL
+  liftIO $ SDL.initializeAll
+
+  let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
+  window <- liftIO $ SDL.createWindow "hnes" config
+  renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
+  -- Create NES
+  cart <- BS.readFile $ head filename
+  runIOEmulator cart $ do
+    reset
+    appLoop renderer
 
 appLoop :: SDL.Renderer -> IOEmulator ()
 appLoop renderer = do
   traces <- stepFrame
-  liftIO $ putStrLn "Stepping"
   events <- liftIO $ SDL.pollEvents
   let eventIsQPress event =
         case eventPayload event of
