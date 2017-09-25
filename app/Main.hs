@@ -18,13 +18,9 @@ main = do
   cart <- BS.readFile "roms/1942.nes"
   runIOEmulator cart $ do
     reset
-    loop
-
-loop :: IOEmulator ()
-loop = do
-  stepFrame
-  liftIO $ putStrLn "Stepping"
-  loop
+    replicateM_ 1000 $ do
+      stepFrame
+      liftIO $ putStrLn "Stepped 1 frame"
 
 -- main :: IO ()
 -- main = do
