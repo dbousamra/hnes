@@ -669,9 +669,10 @@ rra mode addr = ror mode addr >> adc addr
 branch :: IOEmulator Bool -> Word16 -> IOEmulator ()
 branch cond addr = do
   cv <- cond
+  pcv <- load $ Cpu Pc
   when cv $ do
     store (Cpu Pc) addr
-    let cycles = if differentPages addr addr then 2 else 1
+    let cycles = if differentPages pcv addr then 2 else 1
     addCycles cycles
 
 read16Bug :: Word16 -> IOEmulator Word16
