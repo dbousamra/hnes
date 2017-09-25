@@ -83,12 +83,14 @@ getTileRowPatterns nameTableAddr (x, y) row = do
   let addr = 0x2000 + 0x400 * nameTableAddr + (fromIntegral index)
   pattern <- load (Ppu $ PpuMemory8 addr)
   patternTableAddr <- load $ (Ppu BackgroundTableAddr)
-  let patternAddr1 = case patternTableAddr of
-        BackgroundTable0000 -> toWord16 $ pattern * 16
-        BackgroundTable1000 -> toWord16 $ 0x1000 + pattern * 16
-  let patternAddr2 = patternAddr1 + 8
-  pattern1 <- load (Ppu $ PpuMemory8 patternAddr1)
-  pattern2 <- load (Ppu $ PpuMemory8 patternAddr2)
+
+  let basePatternAddr = (toInt pattern) * 16 + row
+  let backgroundPatternAddr = case patternTableAddr of
+        BackgroundTable0000 -> fromIntegral $ basePatternAddr
+        BackgroundTable1000 -> fromIntegral $ 0x1000 + basePatternAddr
+
+  pattern1 <- load (Ppu $ PpuMemory8 backgroundPatternAddr)
+  pattern2 <- load (Ppu $ PpuMemory8 $ backgroundPatternAddr + 1)
   pure (pattern1, pattern2)
 
 getTileRow :: Word16 -> (Int, Int) -> Int -> IOEmulator [Word8]
