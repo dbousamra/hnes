@@ -98,7 +98,7 @@ getTileRow nameTableAddr coords row = do
   (pattern1, pattern2) <- getTileRowPatterns nameTableAddr coords row
   let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]
   let row' = [ (x .&. 1, (y .&. 1) `shiftL` 1)  | (x, y) <- row]
-  let indexes = [toInt $ x .|. y | (x, y) <- row']
+  let indexes = reverse [toInt $ x .|. y | (x, y) <- row']
   sequence $ [load $ Ppu $ PaletteData i | i <- indexes]
 
 tilesWide :: Int

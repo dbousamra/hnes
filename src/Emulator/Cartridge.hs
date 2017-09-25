@@ -27,14 +27,11 @@ data INesFileHeader = INesFileHeader {
 } deriving (Eq, Show)
 
 data Cartridge s = Cartridge {
-  header   :: INesFileHeader,
-  mirror   :: Int,
-  prgBanks :: STRef s Int,
-  prgBank1 :: STRef s Int,
-  prgBank2 :: STRef s Int,
-  chrRom   :: VUM.MVector s Word8,
-  prgRom   :: VUM.MVector s Word8,
-  sRam     :: VUM.MVector s Word8
+  header :: INesFileHeader,
+  mirror :: Int,
+  chrRom :: VUM.MVector s Word8,
+  prgRom :: VUM.MVector s Word8,
+  sRam   :: VUM.MVector s Word8
 }
 
 parseHeader :: BS.ByteString -> INesFileHeader
