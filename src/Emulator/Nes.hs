@@ -315,7 +315,7 @@ writePPUMemory nes addr v
   where addr' = addr `mod` 0x4000
 
 readPPURegister :: PPU s -> Word16 -> ST s Word8
-readPPURegister ppu addr = case (0x2000 + addr `mod` 8) of
+readPPURegister ppu addr = case 0x2000 + addr `mod` 8 of
   0x2002 -> readStatus ppu
   0x2004 -> readOAM ppu
   0x2007 -> readData ppu
@@ -324,7 +324,7 @@ readPPURegister ppu addr = case (0x2000 + addr `mod` 8) of
 readStatus :: PPU s -> ST s Word8
 readStatus ppu = do
   vBlankV <- readSTRef $ verticalBlank ppu
-  let r = (fromEnum vBlankV) `shiftL` 7
+  let r = fromEnum vBlankV `shiftL` 7
   modifySTRef' (verticalBlank ppu) (const False)
   pure $ fromIntegral r
 
@@ -335,7 +335,7 @@ readData :: PPU s -> ST s Word8
 readData ppu = error "Unimplemented PPU readData "
 
 writePPURegister :: Nes s -> Word16 -> Word8 -> ST s ()
-writePPURegister nes addr v = case (0x2000 + addr `mod` 8) of
+writePPURegister nes addr v = case 0x2000 + addr `mod` 8 of
   0x2000 -> writeControl (ppu nes) v
   0x2001 -> writeMask (ppu nes) v
   0x2003 -> writeOAMAddress (ppu nes) v
@@ -352,37 +352,19 @@ writeControl ppu v = do
     1 -> 0x2400
     2 -> 0x2800
     3 -> 0x2C00
-  modifySTRef' (incrementMode ppu) $ const $ case testBit v 2 of
-    False -> Horizontal
-    True  -> Vertical
-  modifySTRef' (spriteTable ppu) $ const $ case testBit v 3 of
-    False -> SpriteTable0000
-    True  -> SpriteTable1000
-  modifySTRef' (bgTable ppu) $ const $ case testBit v 4 of
-    False -> BackgroundTable0000
-    True  -> BackgroundTable1000
-  modifySTRef' (spriteSize ppu) $ const $ case testBit v 5 of
-    False -> Normal
-    True  -> Double
+  modifySTRef' (incrementMode ppu) $ const $ if testBit v 2 then Vertical else Horizontal
+  modifySTRef' (spriteTable ppu) $ const $ if testBit v 3 then SpriteTable1000 else SpriteTable0000
+  modifySTRef' (bgTable ppu) $ const $ if testBit v 4 then BackgroundTable1000 else BackgroundTable0000
+  modifySTRef' (spriteSize ppu) $ const $ if testBit v 5 then Double else Normal
   modifySTRef' (nmiEnabled ppu) $ const $ testBit v 7
 
 writeMask :: PPU s -> Word8 -> ST s ()
 writeMask ppu v = do
-  modifySTRef' (colorMode ppu) $ const $ case testBit v 0 of
-    False -> Color
-    True  -> Grayscale
-  modifySTRef' (leftBgVisibility ppu) $ const $ case testBit v 1 of
-    False -> Hidden
-    True  -> Shown
-  modifySTRef' (leftSpritesVisibility ppu) $ const $ case testBit v 2 of
-    False -> Hidden
-    True  -> Shown
-  modifySTRef' (bgVisibility ppu) $ const $ case testBit v 3 of
-    False -> Hidden
-    True  -> Shown
-  modifySTRef' (spriteVisibility ppu) $ const $ case testBit v 4 of
-    False -> Hidden
-    True  -> Shown
+  modifySTRef' (colorMode ppu) $ const $ if testBit v 0 then Grayscale else Color
+  modifySTRef' (leftBgVisibility ppu) $ const $ if testBit v 1 then Shown else Hidden
+  modifySTRef' (leftSpritesVisibility ppu) $ const $ if testBit v 2 then Shown else Hidden
+  modifySTRef' (bgVisibility ppu) $ const $ if testBit v 3 then Shown else Hidden
+  modifySTRef' (spriteVisibility ppu) $ const $ if testBit v 4 then Shown else Hidden
   modifySTRef' (intensifyReds ppu) $ const $ testBit v 5
   modifySTRef' (intensifyGreens ppu) $ const $ testBit v 6
   modifySTRef' (intensifyBlues ppu) $ const $ testBit v 7
@@ -396,15 +378,13 @@ writeOAMData ppu v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
 writeScroll :: PPU s -> Word8 -> ST s ()
 writeScroll ppu v = do
   modifySTRef' (scrollXY ppu) (`shiftL` 8)
-  modifySTRef' (scrollXY ppu) (.|. (toWord16 v))
+  modifySTRef' (scrollXY ppu) (.|. toWord16 v)
 
 writeAddress :: PPU s -> Word8 -> ST s ()
 writeAddress ppu v = do
   wt <- readSTRef $ writeToggle ppu
   tVrV <- readSTRef $ currentVramAddress ppu
-  let v' = case wt of
-        False -> (tVrV .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
-        True  -> (tVrV .&. 0xFF00) .|. (toWord16 v)
+  let v' = if wt then (tVrV .&. 0xFF00) .|. (toWord16 v) else (tVrV .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
   modifySTRef' (currentVramAddress ppu) (const v')
   modifySTRef' (writeToggle ppu) (const $ not wt)
 
