@@ -10,6 +10,7 @@ module Emulator.Nes (
   , SpriteSize(..)
   , ColorMode(..)
   , Visibility(..)
+  , Interrupt(..)
   , Address(..)
   , Cpu(..)
   , Ppu(..)
@@ -49,15 +50,21 @@ data Nes s = Nes {
   cart :: Cartridge s
 }
 
+data Interrupt
+  = IRQ
+  | NMI
+  deriving (Eq, Show)
+
 data CPU s = CPU {
-  pc     :: STRef       s Word16,
-  sp     :: STRef       s Word8,
-  a      :: STRef       s Word8,
-  x      :: STRef       s Word8,
-  y      :: STRef       s Word8,
-  p      :: STRef       s Word8,
-  ram    :: VUM.MVector s Word8,
-  cycles :: STRef       s Int
+  pc        :: STRef       s Word16,
+  sp        :: STRef       s Word8,
+  a         :: STRef       s Word8,
+  x         :: STRef       s Word8,
+  y         :: STRef       s Word8,
+  p         :: STRef       s Word8,
+  ram       :: VUM.MVector s Word8,
+  cycles    :: STRef       s Int,
+  interrupt :: STRef       s (Maybe Interrupt)
 }
 
 data PPU s = PPU {
@@ -102,12 +109,13 @@ data PPU s = PPU {
 
 -- GADTs are used to represent addressing
 data Cpu a where
-  Pc:: Cpu Word16
-  Sp:: Cpu Word8
+  Pc :: Cpu Word16
+  Sp :: Cpu Word8
   A :: Cpu Word8
   X :: Cpu Word8
   Y :: Cpu Word8
   P :: Cpu Word8
+  Interrupt :: Cpu (Maybe Interrupt)
   CpuMemory8 :: Word16 -> Cpu Word8
   CpuMemory16 :: Word16 -> Cpu Word16
   CpuCycles :: Cpu Int
@@ -119,6 +127,7 @@ data Ppu a where
   NameTableAddr :: Ppu Word16
   BackgroundTableAddr :: Ppu BackgroundTableAddr
   VerticalBlank :: Ppu Bool
+  GenerateNMI :: Ppu Bool
   PaletteData :: Int -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
@@ -134,7 +143,7 @@ data Flag
   | Unused
   | Break
   | Decimal
-  | Interrupt
+  | InterruptDisable
   | Zero
   | Carry
   deriving (Enum)
@@ -165,7 +174,9 @@ newCPU = do
   p <- newSTRef 0x24 -- should this be 0x34?
   ram <- VUM.replicate 65536 0x0
   cycles <- newSTRef 0
-  pure $ CPU pc sp a x y p ram cycles
+  interrupt <- newSTRef $ Nothing
+
+  pure $ CPU pc sp a x y p ram cycles interrupt
 
 writeCPU :: Nes s -> Cpu a -> a -> ST s ()
 writeCPU nes addr v = case addr of
@@ -175,6 +186,7 @@ writeCPU nes addr v = case addr of
   X             -> modifySTRef' (x $ cpu nes) (const v)
   Y             -> modifySTRef' (y $ cpu nes) (const v)
   P             -> modifySTRef' (p $ cpu nes) (const v)
+  Interrupt     -> modifySTRef' (interrupt $ cpu nes) (const v)
   CpuCycles     -> modifySTRef' (cycles $ cpu nes) (const v)
   CpuMemory8 r  -> writeCpuMemory8 nes r v
   CpuMemory16 r -> writeCpuMemory16 nes r v
@@ -187,6 +199,7 @@ readCPU nes addr = case addr of
   X             -> readSTRef $ x $ cpu nes
   Y             -> readSTRef $ y $ cpu nes
   P             -> readSTRef $ p $ cpu nes
+  Interrupt     -> readSTRef $ interrupt $ cpu nes
   CpuCycles     -> readSTRef $ cycles $ cpu nes
   CpuMemory8 r  -> readCpuMemory8 nes r
   CpuMemory16 r -> readCpuMemory16 nes r
@@ -285,6 +298,7 @@ readPPU nes addr = case addr of
   Scanline            -> readSTRef $ scanline $ ppu nes
   FrameCount          -> readSTRef $ frameCount $ ppu nes
   VerticalBlank       -> readSTRef $ verticalBlank $ ppu nes
+  GenerateNMI         -> readSTRef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readSTRef $ bgTable $ ppu nes
   PaletteData i       -> VUM.read (paletteData $ ppu nes) i
   Screen coords       -> VUM.read (screen $ ppu nes) (translateXY coords 256)

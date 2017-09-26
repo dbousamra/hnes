@@ -51,8 +51,12 @@ step = do
     renderScanline
 
   -- Enter Vertical blank period
-  when ((scanline == 241 && cycles == 1)) $
+  when ((scanline == 241 && cycles == 1)) $ do
     store (Ppu VerticalBlank) True
+    generateNMI <- load (Ppu GenerateNMI)
+    when generateNMI $ do
+      store (Cpu Interrupt) (Just NMI)
+    pure ()
 
   -- Exit Vertical blank period
   when ((scanline == 261 && cycles == 1)) $

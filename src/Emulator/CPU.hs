@@ -24,6 +24,7 @@ reset = do
 step :: IOEmulator (Int, Trace)
 step = do
   startingCycles <- load $ Cpu CpuCycles
+  handleInterrupts
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
   trace <- trace opcode addr
@@ -141,6 +142,15 @@ modify :: Address a -> (a -> a) -> IOEmulator ()
 modify addr f = do
   av <- load addr
   store addr (f av)
+
+handleInterrupts :: IOEmulator ()
+handleInterrupts = do
+  interrupt <- load $ Cpu Interrupt
+  case interrupt of
+    Just NMI -> nmi
+    other    -> pure ()
+  store (Cpu Interrupt) Nothing
+
 
 runInstruction :: Opcode -> (Word16 -> IOEmulator ())
 runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
@@ -319,9 +329,9 @@ clc = setFlag Carry False
 cld :: IOEmulator ()
 cld = setFlag Decimal False
 
--- CLI - Clear interrupt flag
+-- CLI - Clear interrupt disable flag
 cli :: IOEmulator ()
-cli = setFlag Interrupt False
+cli = setFlag InterruptDisable False
 
 -- CLV - Clear overflow flag
 clv :: IOEmulator ()
@@ -457,6 +467,12 @@ lsr mode addr = do
 nop :: IOEmulator ()
 nop = pure ()
 
+-- PHA - Push Accumulator register
+pha :: IOEmulator ()
+pha = do
+  av <- load $ Cpu A
+  push av
+
 -- PHP - Push processor status onto stack
 php :: IOEmulator ()
 php = do
@@ -475,12 +491,6 @@ plp :: IOEmulator ()
 plp = do
   v <- pull
   store (Cpu P) ((v .&. 0xEF) .|. 0x20)
-
--- PHA - Push Accumulator register
-pha :: IOEmulator ()
-pha = do
-  av <- load $ Cpu A
-  push av
 
 -- ORA - Logical Inclusive OR
 ora :: Word16 -> IOEmulator ()
@@ -555,9 +565,9 @@ sec = setFlag Carry True
 sed :: IOEmulator ()
 sed = setFlag Decimal True
 
--- SEI - Set interrupt flag
+-- SEI - Set interrupt disable flag
 sei :: IOEmulator ()
-sei = setFlag Interrupt True
+sei = setFlag InterruptDisable True
 
 -- STA - Store Accumulator register
 sta :: Word16 -> IOEmulator ()
@@ -664,6 +674,15 @@ sre mode addr = lsr mode addr >> eor addr
 -- the Accumulator
 rra :: AddressMode -> Word16 -> IOEmulator ()
 rra mode addr = ror mode addr >> adc addr
+
+-- NMI - Non Maskable Interrupt. Not strictly an opcode, but can represented as one
+nmi :: IOEmulator ()
+nmi = do
+  pcv <- load $ Cpu Pc
+  push16 pcv
+  php
+  v <- load $ Cpu $ CpuMemory16 0xFFFA
+  store (Cpu Pc) v
 
 -- Moves execution to addr if condition is set
 branch :: IOEmulator Bool -> Word16 -> IOEmulator ()
