@@ -208,7 +208,7 @@ readCpuMemory8 :: Nes s -> Word16 -> ST s Word8
 readCpuMemory8 nes addr
   | addr < 0x2000 = VUM.read (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
   | addr < 0x4000 = readPPURegister (ppu nes) addr
-  | addr >= 0x4000 && addr <= 0x4017 = error "IO read not implemented!"
+  | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
   | addr >= 0x6000 && addr <= 0xFFFF = readCart (cart nes) addr
   | otherwise = error "Erroneous read detected!"
@@ -384,7 +384,7 @@ writeMask ppu v = do
   modifySTRef' (intensifyBlues ppu) $ const $ testBit v 7
 
 writeOAMAddress :: PPU s -> Word8 -> ST s ()
-writeOAMAddress ppu v = error $ "Unimplemented writeOAMAddress at " ++ prettifyWord8 v
+writeOAMAddress ppu v = modifySTRef' (oamAddress ppu) (const v)
 
 writeOAMData :: PPU s -> Word8 -> ST s ()
 writeOAMData ppu v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
