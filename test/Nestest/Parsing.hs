@@ -2,14 +2,12 @@ module Nestest.Parsing (
   parseTrace
 ) where
 
-import           Control.Monad      (void)
-import           Data.Void
 import           Data.Word
 import           Emulator.Opcode
 import           Emulator.Trace
 import           Numeric            (readHex)
 import           Text.Parsec
-import           Text.Parsec.String (Parser, parseFromFile)
+import           Text.Parsec.String (Parser)
 
 parseTrace :: Parser Trace
 parseTrace = do
@@ -35,7 +33,7 @@ parseTrace = do
   _ <- space
   cyc <- string "CYC:" >> cyclesP
   _ <- space
-  slv <- string "SL:" >> (many $ noneOf "\n")
+  _ <- string "SL:" >> (many $ noneOf "\n")
   let opcode = decodeOpcode a0r
   pure $ Trace pcv spv av xv yv pv opcode a0r a1r a2r cyc
 

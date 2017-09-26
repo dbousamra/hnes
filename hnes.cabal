@@ -23,7 +23,7 @@ library
                      , Emulator.Opcode
                      , Emulator.Util
                      , Emulator.Trace
-  ghc-options:         -O2
+  ghc-options:         -O2 -fno-warn-name-shadowing 
   build-depends:       base >= 4.7 && < 5
                      , mtl
                      , vector

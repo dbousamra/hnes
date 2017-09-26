@@ -22,15 +22,12 @@ module Emulator.Nes (
 import           Control.Monad.ST
 import           Data.Bits                   (shiftL, shiftR, testBit, (.&.),
                                               (.|.))
-import qualified Data.ByteString             as BS
 import           Data.STRef
-import qualified Data.Vector.Unboxed         as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
-import           Debug.Trace
 import           Emulator.Cartridge
 import           Emulator.Util
-import           Prelude                     hiding (cycles, read, replicate)
+import           Prelude                     hiding (read, replicate)
 
 data IncrementMode = Horizontal | Vertical
 
@@ -232,7 +229,7 @@ writeCpuMemory16 :: Nes s -> Word16 -> Word16 -> ST s ()
 writeCpuMemory16 nes addr v = do
   let (lo, hi) = splitW16 v
   writeCpuMemory8 nes addr lo
-  writeCpuMemory8 nes (addr + 1) lo
+  writeCpuMemory8 nes (addr + 1) hi
 
 newPPU :: ST s (PPU s)
 newPPU = do
@@ -248,7 +245,6 @@ newPPU = do
   screen <- VUM.replicate (256 * 240) (0, 0, 0)
   -- Addresses
   currentVramAddress <- newSTRef 0x0
-  tempVramAddress <- newSTRef 0x0
   oamAddress <- newSTRef 0x0
   -- Control register
   nameTable <- newSTRef 0x2000
@@ -333,7 +329,7 @@ readPPURegister ppu addr = case 0x2000 + addr `mod` 8 of
   0x2002 -> readStatus ppu
   0x2004 -> readOAM ppu
   0x2007 -> readData ppu
-  other  -> error $ "Unimplemented read at " ++ show addr
+  other  -> error $ "Unimplemented read at " ++ show other
 
 readStatus :: PPU s -> ST s Word8
 readStatus ppu = do

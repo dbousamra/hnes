@@ -9,20 +9,15 @@ module Emulator (
 ) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class
 import           Control.Monad.Loops
-import           Data.Bits              hiding (bit)
-import qualified Data.ByteString        as BS
+import qualified Data.ByteString     as BS
 import           Data.Word
-import qualified Emulator.CPU           as CPU
+import qualified Emulator.CPU        as CPU
 import           Emulator.Monad
 import           Emulator.Nes
-import           Emulator.Opcode
-import qualified Emulator.PPU           as PPU
-import           Emulator.Trace         (Trace (..), renderTrace)
-import           Emulator.Util
-import           Prelude                hiding (and, compare)
-import           Text.Printf            (printf)
+import qualified Emulator.PPU        as PPU
+import           Emulator.Trace      (Trace (..))
+import           Prelude             hiding (and, compare)
 
 r :: IO ()
 r = void $ runDebug "roms/nestest.nes" Nothing
@@ -39,21 +34,17 @@ runDebug fp startPc = do
       Nothing -> reset
     emulateDebug 1000000000
 
-emulate :: IOEmulator ()
-emulate = step >> emulate
-
 emulateDebug :: Int -> IOEmulator [Trace]
 emulateDebug n = go 0 n [] where
-  go c n acc = do
+  go c n' acc = do
     trace <- step
-    if c > n then pure acc
+    if c > n' then pure acc
     else go (c + 1) n (acc ++ [trace])
 
 step :: IOEmulator Trace
 step = do
-  (cycles, trace) <- CPU.step
-  -- liftIO $ putStrLn $ renderTrace trace
-  replicateM_ (cycles * 3) PPU.step
+  (cycles', trace) <- CPU.step
+  replicateM_ (cycles' * 3) PPU.step
   pure trace
 
 stepFrame :: IOEmulator [Trace]

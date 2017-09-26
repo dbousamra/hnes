@@ -8,11 +8,11 @@ import           Control.Monad.IO.Class
 import           Data.Bits              hiding (bit)
 import           Data.Word
 import           Emulator.Monad
-import           Emulator.Nes           hiding (cycles)
+import           Emulator.Nes
 import           Emulator.Opcode
-import           Emulator.Trace         (Trace (..), renderTrace)
+import           Emulator.Trace         (Trace (..))
 import           Emulator.Util
-import           Prelude                hiding (and, compare, cycles)
+import           Prelude                hiding (and, compare)
 
 reset :: IOEmulator ()
 reset = do
@@ -27,15 +27,15 @@ step = do
   handleInterrupts
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
-  trace <- trace opcode addr
+  trace <- trace opcode
   addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
   runInstruction opcode addr
   endingCycles <- load $ Cpu CpuCycles
   pure (endingCycles - startingCycles, trace)
 
-trace :: Opcode -> Word16 -> IOEmulator Trace
-trace op addr = do
+trace :: Opcode -> IOEmulator Trace
+trace op = do
   pcv <- load $ Cpu Pc
   a0 <- load $ Cpu $ CpuMemory8 pcv
   a1 <- load $ Cpu $ CpuMemory8 (pcv + 1)
@@ -148,7 +148,8 @@ handleInterrupts = do
   interrupt <- load $ Cpu Interrupt
   case interrupt of
     Just NMI -> nmi
-    other    -> pure ()
+    Just IRQ -> error "not handling IRQ yet"
+    Nothing  -> pure ()
   store (Cpu Interrupt) Nothing
 
 
@@ -164,7 +165,7 @@ runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   BMI -> bmi
   BNE -> bne
   BPL -> bpl
-  BRK -> brk
+  BRK -> const brk
   BVC -> bvc
   BVS -> bvs
   CLC -> const clc
@@ -204,10 +205,10 @@ runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   STA -> sta
   STX -> stx
   STY -> sty
-  TAX -> tax
-  TAY -> tay
-  TSX -> tsx
-  TXA -> txa
+  TAX -> const tax
+  TAY -> const tay
+  TSX -> const tsx
+  TXA -> const txa
   TXS -> const txs
   TYA -> const tya
   KIL -> const $ illegal mnemonic
@@ -258,7 +259,7 @@ asl mode addr = do
   where
     dest = case mode of
       Accumulator -> Cpu A
-      other       -> Cpu $ CpuMemory8 addr
+      _           -> Cpu $ CpuMemory8 addr
 
 -- AND - Logical and
 and :: Word16 -> IOEmulator ()
@@ -298,8 +299,8 @@ bvs :: Word16 -> IOEmulator ()
 bvs = branch $ getFlag Overflow
 
 -- BRK - Force interrupt
-brk :: Word16 -> IOEmulator ()
-brk addr = do
+brk :: IOEmulator ()
+brk = do
   pcv <- load $ Cpu Pc
   push16 pcv
   php
@@ -433,7 +434,6 @@ lda :: Word16 -> IOEmulator ()
 lda addr = do
   v <- load $ Cpu $ CpuMemory8 addr
   store (Cpu A) v
-  av <- load $ Cpu A
   setZN v
 
 -- LDX - Load X Register
@@ -461,7 +461,7 @@ lsr mode addr = do
   where
     dest = case mode of
       Accumulator -> Cpu A
-      other       -> Cpu $ CpuMemory8 addr
+      _           -> Cpu $ CpuMemory8 addr
 
 -- NOP - No operation. Do nothing :D
 nop :: IOEmulator ()
@@ -513,7 +513,7 @@ rol mode addr = do
   where
     dest = case mode of
       Accumulator -> Cpu A
-      other       -> Cpu $ CpuMemory8 addr
+      _           -> Cpu $ CpuMemory8 addr
 
 -- ROR - Rotate right
 ror :: AddressMode -> Word16 -> IOEmulator ()
@@ -527,7 +527,7 @@ ror mode addr = do
   where
     dest = case mode of
       Accumulator -> Cpu A
-      other       -> Cpu $ CpuMemory8 addr
+      _           -> Cpu $ CpuMemory8 addr
 
 -- RTI - Return from interrupt
 rti :: IOEmulator ()
@@ -584,32 +584,32 @@ sty :: Word16 -> IOEmulator ()
 sty addr = (load $ Cpu Y) >>= (store $ Cpu $ CpuMemory8 addr)
 
 -- TAX - Transfer Accumulator to X
-tax :: Word16 -> IOEmulator ()
-tax addr = do
+tax :: IOEmulator ()
+tax = do
   av <- load $ Cpu A
   store (Cpu X) av
   xv <- load $ Cpu X
   setZN xv
 
 -- TAY - Transfer Accumulator to Y
-tay :: Word16 -> IOEmulator ()
-tay addr =  do
+tay :: IOEmulator ()
+tay =  do
   av <- load $ Cpu A
   store (Cpu Y) av
   yv <- load $ Cpu Y
   setZN yv
 
 -- TSX - Transfer Stack Pointer to X
-tsx :: Word16 -> IOEmulator ()
-tsx addr = do
+tsx :: IOEmulator ()
+tsx = do
   spv <- load $ Cpu Sp
   store (Cpu X) spv
   xv <- load $ Cpu X
   setZN xv
 
 -- TXA - Transfer X to Accumulator
-txa :: Word16 -> IOEmulator ()
-txa addr = do
+txa :: IOEmulator ()
+txa = do
   xv <- load $ Cpu X
   store (Cpu A) xv
   av <- load $ Cpu A
@@ -759,7 +759,9 @@ compare a b = do
   setFlag Carry (a >= b)
 
 illegal :: Mnemonic -> IOEmulator ()
-illegal mnemonic = pure ()
+illegal mnem = do
+  liftIO $ putStrLn ("illegal opcode used " ++ show mnem)
+  pure ()
 
 addCycles :: Int -> IOEmulator ()
 addCycles n = modify (Cpu CpuCycles) (+ n)

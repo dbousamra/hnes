@@ -4,15 +4,12 @@ module Emulator.PPU (
 ) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class
 import           Data.Bits                   (shiftL, shiftR, (.&.), (.|.))
-import           Data.List                   (intercalate)
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
 import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Util
-import           System.Random
 
 reset :: IOEmulator ()
 reset = do
@@ -54,9 +51,7 @@ step = do
   when ((scanline == 241 && cycles == 1)) $ do
     store (Ppu VerticalBlank) True
     generateNMI <- load (Ppu GenerateNMI)
-    when generateNMI $ do
-      store (Cpu Interrupt) (Just NMI)
-    pure ()
+    when generateNMI $ store (Cpu Interrupt) (Just NMI)
 
   -- Exit Vertical blank period
   when ((scanline == 261 && cycles == 1)) $
@@ -98,12 +93,24 @@ getTileRowPatterns nameTableAddr (x, y) row = do
 
   pure (pattern1, pattern2)
 
+getTileAttribute :: Word16 -> (Int, Int) -> IOEmulator Word8
+getTileAttribute nameTableAddr (x, y) = do
+  let gx = x `div` 4
+  let gy = y `div` 4
+  let sx = (x `mod` 4) `div` 2
+  let sy = (y `mod` 4) `div` 2
+  let addr = fromIntegral $ 0x23c0 + (0x400 * (fromIntegral nameTableAddr)) + (gy * 8) + gx
+  attribute <- load (Ppu $ PpuMemory8 addr)
+  let shift = fromIntegral $ ((sy * 2) + sx) * 2
+  pure $ (attribute `shiftR` shift) .&. 3
+
 getTileRow :: Word16 -> (Int, Int) -> Int -> IOEmulator [Word8]
 getTileRow nameTableAddr coords row = do
   (pattern1, pattern2) <- getTileRowPatterns nameTableAddr coords row
+  attribute <- getTileAttribute nameTableAddr coords
   let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]
   let row' = [ (x .&. 1, (y .&. 1) `shiftL` 1)  | (x, y) <- row]
-  let indexes = reverse [toInt $ x .|. y | (x, y) <- row']
+  let indexes = reverse [toInt $ (attribute `shiftL` 2) .|. x .|. y | (x, y) <- row']
   sequence $ [load $ Ppu $ PaletteData i | i <- indexes]
 
 tilesWide :: Int

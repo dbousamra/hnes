@@ -5,22 +5,19 @@ module Main where
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
-import           Emulator               (emulateDebug, reset, run, step,
-                                         stepFrame)
+import           Emulator               (reset, stepFrame)
 import           Emulator.Monad
 import           Emulator.Nes
-import           Emulator.Trace         (renderTrace)
-import           Foreign.C.Types
 import           SDL                    as SDL
 import           System.Environment     (getArgs)
 
 main2 :: IO ()
 main2 = do
-  cart <- BS.readFile $ "roms/nestest.nes"
-  runIOEmulator cart $ do
+  cart' <- BS.readFile $ "roms/nestest.nes"
+  runIOEmulator cart' $ do
     reset
     replicateM_ 1000 $ do
-      stepFrame
+      _ <- stepFrame
       liftIO $ putStrLn "Stepped 1 frame"
 
 main :: IO ()
@@ -33,14 +30,14 @@ main = do
   window <- liftIO $ SDL.createWindow "hnes" config
   renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
   -- Create NES
-  cart <- BS.readFile $ head filename
-  runIOEmulator cart $ do
+  cart' <- BS.readFile $ head filename
+  runIOEmulator cart' $ do
     reset
     appLoop renderer
 
 appLoop :: SDL.Renderer -> IOEmulator ()
 appLoop renderer = do
-  traces <- stepFrame
+  _ <- stepFrame
   events <- liftIO $ SDL.pollEvents
   let eventIsQPress event =
         case eventPayload event of

@@ -5,10 +5,7 @@ module Emulator.Cartridge (
   , writeCart
 ) where
 
-import           Control.Monad               (forM_)
 import           Control.Monad.ST
-import           Data.Bits                   (shiftL, unsafeShiftR, (.&.),
-                                              (.|.))
 import qualified Data.ByteString             as BS
 import           Data.STRef
 import qualified Data.Vector.Unboxed         as VU
@@ -49,8 +46,7 @@ parseHeader bs = INesFileHeader
 
 parseCart :: BS.ByteString -> ST s (Cartridge s)
 parseCart bs = do
-  let header @ (INesFileHeader _ numPrg numChr control1 control2 _) = parseHeader bs
-  let mirror = 1
+  let header @ (INesFileHeader _ numPrg numChr _ _ _) = parseHeader bs
   let prgOffset  = numPrg * prgRomSize
   let prgRom = sliceBS headerSize (headerSize + prgOffset) bs
   let chrOffset = numChr * chrRomSize
@@ -93,9 +89,6 @@ writeCart (Cartridge _ chr _ sram _ _ prgBank1 _ _) addr v
 
 headerSize :: Int
 headerSize = 0x10
-
-trainerSize :: Int
-trainerSize = 0x200
 
 prgRomSize :: Int
 prgRomSize = 0x4000
