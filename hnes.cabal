@@ -23,7 +23,9 @@ library
                      , Emulator.Opcode
                      , Emulator.Util
                      , Emulator.Trace
-  ghc-options:         -O2 -fno-warn-name-shadowing 
+  ghc-options:       -O2 
+                     -fno-warn-name-shadowing 
+                     -XStrict
   build-depends:       base >= 4.7 && < 5
                      , mtl
                      , vector
@@ -41,6 +43,7 @@ executable hnes
                       -rtsopts
                       -threaded 
                       -H512M
+                      -XStrict
   build-depends:       base >= 4.7 && < 5
                      , hnes
                      , mtl

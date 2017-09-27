@@ -38,6 +38,7 @@ main = do
 appLoop :: SDL.Renderer -> IOEmulator ()
 appLoop renderer = do
   _ <- stepFrame
+  liftIO $ putStrLn "Stepping"
   events <- liftIO $ SDL.pollEvents
   let eventIsQPress event =
         case eventPayload event of
