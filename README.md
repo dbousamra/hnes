@@ -29,4 +29,6 @@ Early on in the PPU
 
 <img src="screenshots/dk-2.png" width="256" height="240"/>
 
+<img src="screenshots/dk-3.png" width="256" height="240"/>
+
 <img src="screenshots/balloon-fight-1.png" width="256" height="240"/>
