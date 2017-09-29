@@ -152,7 +152,6 @@ handleInterrupts = do
     Nothing  -> pure ()
   store (Cpu Interrupt) Nothing
 
-
 runInstruction :: Opcode -> (Word16 -> IOEmulator ())
 runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   ADC -> adc

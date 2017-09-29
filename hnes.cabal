@@ -23,9 +23,9 @@ library
                      , Emulator.Opcode
                      , Emulator.Util
                      , Emulator.Trace
+  extensions:        Strict
   ghc-options:       -O2 
                      -fno-warn-name-shadowing 
-                     -XStrict
   build-depends:       base >= 4.7 && < 5
                      , mtl
                      , vector
@@ -39,11 +39,11 @@ executable hnes
   hs-source-dirs:      app
   main-is:             Main.hs
   default-language:    Haskell2010
+  extensions:        Strict
   ghc-options:        -O2 
                       -rtsopts
                       -threaded 
                       -H512M
-                      -XStrict
   build-depends:       base >= 4.7 && < 5
                      , hnes
                      , mtl

@@ -11,14 +11,14 @@ import           Emulator.Nes
 import           SDL                    as SDL
 import           System.Environment     (getArgs)
 
-main2 :: IO ()
-main2 = do
-  cart' <- BS.readFile $ "roms/nestest.nes"
-  runIOEmulator cart' $ do
-    reset
-    replicateM_ 1000 $ do
-      _ <- stepFrame
-      liftIO $ putStrLn "Stepped 1 frame"
+-- main :: IO ()
+-- main = do
+--   cart' <- BS.readFile $ "roms/nestest.nes"
+--   runIOEmulator cart' $ do
+--     reset
+--     replicateM_ 1000 $ do
+--       _ <- stepFrame
+--       liftIO $ putStrLn "Stepped 1 frame"
 
 main :: IO ()
 main = do
@@ -48,8 +48,8 @@ appLoop renderer = do
           _ -> False
       qPressed = any eventIsQPress events
 
-  render renderer
-  liftIO $ SDL.present renderer
+  -- render renderer
+  -- liftIO $ SDL.present renderer
   unless qPressed (appLoop renderer)
 
 render :: SDL.Renderer -> IOEmulator ()
@@ -58,7 +58,7 @@ render renderer = do
 
   forM_ [0 .. 256 - 1] (\x ->
     forM_ [0 .. 240 - 1] (\y -> do
-    let addr = (Ppu $ Screen (fromIntegral x, fromIntegral y))
+    let addr = Ppu $ Screen (fromIntegral x, fromIntegral y)
     (r, g, b) <- load addr
     let color = V4 r g b maxBound
     SDL.rendererDrawColor renderer $= color
