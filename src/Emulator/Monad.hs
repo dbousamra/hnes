@@ -17,13 +17,11 @@ import           Emulator.Nes         as Nes
 newtype IOEmulator a = IOEmulator (ReaderT (Nes RealWorld)  IO a)
   deriving (Functor, Applicative, Monad, MonadIO)
 
-{-# INLINE load #-}
 load :: Nes.Address a -> IOEmulator a
 load address = IOEmulator $ do
   nes <- ask
   lift $ stToIO $ Nes.read nes address
 
-{-# INLINE store #-}
 store :: Nes.Address a -> a -> IOEmulator ()
 store address value = IOEmulator $ do
   nes <- ask

@@ -68,22 +68,22 @@ parseCart bs = do
 
 readCart :: Cartridge s -> Word16 -> ST s Word8
 readCart (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
-  | addr' <  0x2000 = VUM.read chr addr'
+  | addr' <  0x2000 = VUM.unsafeRead chr addr'
   | addr' >= 0xC000 = do
     prgBank2V <- readSTRef prgBank2
-    VUM.read prg ((prgBank2V * 0x4000) + (addr' - 0xC000))
+    VUM.unsafeRead prg ((prgBank2V * 0x4000) + (addr' - 0xC000))
   | addr' >= 0x8000 = do
     prgBank1V <- readSTRef prgBank1
-    VUM.read prg ((prgBank1V * 0x4000) + (addr' - 0x8000))
-  | addr' >= 0x6000 = VUM.read prg (addr' - 0x6000)
+    VUM.unsafeRead prg ((prgBank1V * 0x4000) + (addr' - 0x8000))
+  | addr' >= 0x6000 = VUM.unsafeRead prg (addr' - 0x6000)
   | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 
 writeCart :: Cartridge s -> Word16 -> Word8 -> ST s ()
 writeCart (Cartridge _ chr _ sram _ _ prgBank1 _ _) addr v
-  | addr' < 0x2000 = VUM.write chr addr' v
+  | addr' < 0x2000 = VUM.unsafeWrite chr addr' v
   | addr' >= 0x8000 = modifySTRef prgBank1 (const $ toInt v)
-  | addr' >= 0x6000 = VUM.write sram (addr' - 0x6000) v
+  | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
   | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 

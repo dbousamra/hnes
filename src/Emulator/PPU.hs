@@ -4,8 +4,7 @@ module Emulator.PPU (
 ) where
 
 import           Control.Monad
-import           Data.Bits                   (shiftL, shiftR, (.&.), (.|.))
-import qualified Data.Vector.Unboxed.Mutable as VUM
+import           Data.Bits      (shiftL, shiftR, (.&.), (.|.))
 import           Data.Word
 import           Emulator.Monad
 import           Emulator.Nes

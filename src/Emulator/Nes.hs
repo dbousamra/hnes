@@ -203,7 +203,7 @@ readCPU nes addr = case addr of
 
 readCpuMemory8 :: Nes s -> Word16 -> ST s Word8
 readCpuMemory8 nes addr
-  | addr < 0x2000 = VUM.read (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
+  | addr < 0x2000 = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
   | addr < 0x4000 = readPPURegister (ppu nes) addr
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
@@ -218,7 +218,7 @@ readCpuMemory16 nes addr = do
 
 writeCpuMemory8 :: Nes s -> Word16 -> Word8 -> ST s ()
 writeCpuMemory8 nes addr v
-  | addr < 0x2000 = VUM.write (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
+  | addr < 0x2000 = VUM.unsafeWrite (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
   | addr < 0x4000 = writePPURegister nes addr v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = error "APU write not implemented"
@@ -296,8 +296,8 @@ readPPU nes addr = case addr of
   VerticalBlank       -> readSTRef $ verticalBlank $ ppu nes
   GenerateNMI         -> readSTRef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readSTRef $ bgTable $ ppu nes
-  PaletteData i       -> VUM.read (paletteData $ ppu nes) i
-  Screen coords       -> VUM.read (screen $ ppu nes) (translateXY coords 256)
+  PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
+  Screen coords       -> VUM.unsafeRead (screen $ ppu nes) (translateXY coords 256)
   PpuMemory8 r        -> readPPUMemory nes r
 
 writePPU :: PPU s -> Ppu a -> a -> ST s ()
@@ -306,21 +306,21 @@ writePPU ppu addr v = case addr of
   Scanline      -> modifySTRef' (scanline ppu) (const v)
   FrameCount    -> modifySTRef' (frameCount ppu) (const v)
   VerticalBlank -> modifySTRef' (verticalBlank ppu) (const v)
-  Screen coords -> VUM.write (screen ppu) (translateXY coords 256) v
+  Screen coords -> VUM.unsafeWrite (screen ppu) (translateXY coords 256) v
 
 readPPUMemory :: Nes s -> Word16 -> ST s Word8
 readPPUMemory nes addr
   | addr' < 0x2000 = readCart (cart nes) addr'
-  | addr' < 0x3F00 = VUM.read (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
-  | addr' < 0x4000 = VUM.read (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
+  | addr' < 0x3F00 = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  | addr' < 0x4000 = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
 
 writePPUMemory :: Nes s -> Word16 -> Word8 -> ST s ()
 writePPUMemory nes addr v
   | addr' < 0x2000 = writeCart (cart nes) addr' v
-  | addr' < 0x3F00 = VUM.write (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
-  | addr' < 0x4000 = VUM.write (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
+  | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
+  | addr' < 0x4000 = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
@@ -408,7 +408,7 @@ writeDMA nes v = do
       if i < 255 then do
         oamA <- readSTRef $ oamAddress (ppu nes)
         oamV <- readCpuMemory8 nes (toWord16 addr)
-        VUM.write (oamData $ ppu nes) (toInt oamA) oamV
+        VUM.unsafeWrite (oamData $ ppu nes) (toInt oamA) oamV
         modifySTRef' (oamAddress (ppu nes)) (+ 1)
         write nes (i + 1) (addr + 1)
       else

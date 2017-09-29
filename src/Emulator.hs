@@ -16,7 +16,7 @@ import           Prelude             hiding (and, compare)
 step :: IOEmulator Trace
 step = do
   (cycles', trace) <- CPU.step
-  replicateM_ (cycles' * 1) PPU.step
+  replicateM_ (cycles' * 3) PPU.step
   pure trace
 
 stepFrame :: IOEmulator [Trace]
