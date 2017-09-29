@@ -48,8 +48,8 @@ appLoop renderer = do
           _ -> False
       qPressed = any eventIsQPress events
 
-  -- render renderer
-  -- liftIO $ SDL.present renderer
+  render renderer
+  liftIO $ SDL.present renderer
   unless qPressed (appLoop renderer)
 
 render :: SDL.Renderer -> IOEmulator ()

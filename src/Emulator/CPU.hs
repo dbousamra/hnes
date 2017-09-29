@@ -23,6 +23,9 @@ reset = do
 
 step :: IOEmulator (Int, Trace)
 step = do
+  -- Start counting the number of cycles.
+  -- Some of the opcodes (the branch ones)
+  -- modify the cycle count directly due to page crosses
   startingCycles <- load $ Cpu CpuCycles
   handleInterrupts
   opcode <- loadNextOpcode
