@@ -42,14 +42,9 @@ data ColorMode = Color | Grayscale
 data Visibility = Hidden | Shown
 
 data Nes = Nes {
-  cpu           :: IORef CPU,
-  ppu           :: IORef PPU,
-  cart          :: Cartridge,
-  ram           :: VUM.MVector RealWorld Word8,
-  oamData       :: VUM.MVector RealWorld Word8,
-  nameTableData :: VUM.MVector RealWorld Word8,
-  paletteData   :: VUM.MVector RealWorld Word8,
-  screen        :: VUM.MVector RealWorld (Word8, Word8, Word8)
+  cpu  :: CPU,
+  ppu  :: PPU,
+  cart :: Cartridge
 }
 
 data Interrupt
@@ -58,48 +53,55 @@ data Interrupt
   deriving (Eq, Show)
 
 data CPU = CPU {
-  pc        :: Word16,
-  sp        :: Word8,
-  a         :: Word8,
-  x         :: Word8,
-  y         :: Word8,
-  p         :: Word8,
-  cycles    :: Int,
-  interrupt :: Maybe Interrupt
+  pc        :: IORef       Word16,
+  sp        :: IORef       Word8,
+  a         :: IORef       Word8,
+  x         :: IORef       Word8,
+  y         :: IORef       Word8,
+  p         :: IORef       Word8,
+  ram       :: VUM.MVector RealWorld Word8,
+  cycles    :: IORef       Int,
+  interrupt :: IORef       (Maybe Interrupt)
 }
 
 data PPU = PPU {
   -- Misc
-  ppuCycles             :: Int,
-  scanline              :: Int,
-  frameCount            :: Int,
-  writeToggle           :: Bool,
+  ppuCycles             :: IORef Int,
+  scanline              :: IORef Int,
+  frameCount            :: IORef Int,
+  writeToggle           :: IORef Bool,
+  -- Data
+  oamData               :: VUM.MVector RealWorld Word8,
+  nameTableData         :: VUM.MVector RealWorld Word8,
+  paletteData           :: VUM.MVector RealWorld Word8,
+  screen                :: VUM.MVector RealWorld (Word8, Word8, Word8),
   -- Addresses
-  currentVramAddress    :: Word16,
-  oamAddress            :: Word8,
+  currentVramAddress    :: IORef Word16,
+  oamAddress            :: IORef Word8,
   -- Control register bits
-  nameTable             :: Word16,
-  incrementMode         :: IncrementMode,
-  spriteTable           :: SpriteTableAddr,
-  bgTable               :: BackgroundTableAddr,
-  spriteSize            :: SpriteSize,
-  nmiEnabled            :: Bool,
+  nameTable             :: IORef Word16,
+  incrementMode         :: IORef IncrementMode,
+  spriteTable           :: IORef SpriteTableAddr,
+  bgTable               :: IORef BackgroundTableAddr,
+  spriteSize            :: IORef SpriteSize,
+  nmiEnabled            :: IORef Bool,
   -- Mask register bits
-  colorMode             :: ColorMode,
-  leftBgVisibility      :: Visibility,
-  leftSpritesVisibility :: Visibility,
-  bgVisibility          :: Visibility,
-  spriteVisibility      :: Visibility,
-  intensifyReds         :: Bool,
-  intensifyGreens       :: Bool,
-  intensifyBlues        :: Bool,
+  colorMode             :: IORef ColorMode,
+  leftBgVisibility      :: IORef Visibility,
+  leftSpritesVisibility :: IORef Visibility,
+  bgVisibility          :: IORef Visibility,
+  spriteVisibility      :: IORef Visibility,
+  intensifyReds         :: IORef Bool,
+  intensifyGreens       :: IORef Bool,
+  intensifyBlues        :: IORef Bool,
   -- Status register bits
-  lastWrite             :: Word8,
-  spriteOverflow        :: Bool,
-  spriteZeroHit         :: Bool,
-  verticalBlank         :: Bool,
+  lastWrite             :: IORef Word8,
+  spriteOverflow        :: IORef Bool,
+  spriteZeroHit         :: IORef Bool,
+  verticalBlank         :: IORef Bool,
+
   -- Scroll register
-  scrollXY              :: Word16
+  scrollXY              :: IORef Word16
 }
 
 -- GADTs are used to represent addressing
@@ -145,19 +147,9 @@ data Flag
 
 new :: Cartridge -> IO Nes
 new cart = do
-  cpu <- newIORef newCPU
-  ppu <- newIORef newPPU
-  -- CPU Memory
-  ram <- VUM.replicate 65536 0x0
-  -- PPU Memory
-  oamData <- VUM.replicate 0x100 0x0
-  nameTableData <- VUM.replicate 0x800 0x0
-  paletteData <- VUM.replicate 0x20 0x0
-  screen <- VUM.replicate (256 * 240) (0, 0, 0)
-  pure $ Nes
-    cpu ppu cart
-    ram
-    oamData nameTableData paletteData screen
+  cpu <- newCPU
+  ppu <- newPPU
+  pure $ Nes cpu ppu cart
 
 read :: Nes -> Address a -> IO a
 read nes addr = case addr of
@@ -167,67 +159,52 @@ read nes addr = case addr of
 write :: Nes -> Address a -> a -> IO ()
 write nes addr v = case addr of
   Cpu r -> writeCPU nes r v
-  Ppu r -> writePPU nes r v
+  Ppu r -> writePPU (ppu nes) r v
 
-newCPU :: CPU
-newCPU = CPU pc sp a x y p cycles interrupt
-  where
-    pc = 0x0
-    sp = 0xFD
-    a = 0x0
-    x = 0x0
-    y = 0x0
-    p = 0x24 -- should this be 0x34?
-    cycles = 0
-    interrupt = Nothing
+newCPU :: IO CPU
+newCPU = do
+  pc <- newIORef 0x0
+  sp <- newIORef 0xFD
+  a <- newIORef 0x0
+  x <- newIORef 0x0
+  y <- newIORef 0x0
+  p <- newIORef 0x24 -- should this be 0x34?
+  ram <- VUM.replicate 65536 0x0
+  cycles <- newIORef 0
+  interrupt <- newIORef Nothing
+
+  pure $ CPU pc sp a x y p ram cycles interrupt
 
 writeCPU :: Nes -> Cpu a -> a -> IO ()
 writeCPU nes addr v = case addr of
-  Pc            -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { pc = v })
-  Sp            -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { sp = v })
-  A             -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { a = v })
-  X             -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { x = v })
-  Y             -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { y = v })
-  P             -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { p = v })
-  Interrupt     -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { interrupt = v })
-  CpuCycles     -> do
-    cpuv <- readIORef (cpu nes)
-    modifyIORef' (cpu nes) (const $ cpuv { cycles = v })
+  Pc            -> modifyIORef' (pc $ cpu nes) (const v)
+  Sp            -> modifyIORef' (sp $ cpu nes) (const v)
+  A             -> modifyIORef' (a $ cpu nes) (const v)
+  X             -> modifyIORef' (x $ cpu nes) (const v)
+  Y             -> modifyIORef' (y $ cpu nes) (const v)
+  P             -> modifyIORef' (p $ cpu nes) (const v)
+  Interrupt     -> modifyIORef' (interrupt $ cpu nes) (const v)
+  CpuCycles     -> modifyIORef' (cycles $ cpu nes) (const v)
   CpuMemory8 r  -> writeCpuMemory8 nes r v
   CpuMemory16 r -> writeCpuMemory16 nes r v
 
-
 readCPU :: Nes -> Cpu a -> IO a
 readCPU nes addr = case addr of
-  Pc            -> pc <$> (readIORef $ cpu nes)
-  Sp            -> sp <$> (readIORef $ cpu nes)
-  A             -> a <$> (readIORef $ cpu nes)
-  X             -> x <$> (readIORef $ cpu nes)
-  Y             -> y <$> (readIORef $ cpu nes)
-  P             -> p <$> (readIORef $ cpu nes)
-  Interrupt     -> interrupt <$> (readIORef $ cpu nes)
-  CpuCycles     -> cycles <$> (readIORef $ cpu nes)
+  Pc            -> readIORef $ pc $ cpu nes
+  Sp            -> readIORef $ sp $ cpu nes
+  A             -> readIORef $ a $ cpu nes
+  X             -> readIORef $ x $ cpu nes
+  Y             -> readIORef $ y $ cpu nes
+  P             -> readIORef $ p $ cpu nes
+  Interrupt     -> readIORef $ interrupt $ cpu nes
+  CpuCycles     -> readIORef $ cycles $ cpu nes
   CpuMemory8 r  -> readCpuMemory8 nes r
   CpuMemory16 r -> readCpuMemory16 nes r
 
 readCpuMemory8 :: Nes -> Word16 -> IO Word8
 readCpuMemory8 nes addr
-  | addr < 0x2000 = VUM.unsafeRead (ram nes) (fromIntegral addr `mod` 0x0800)
-  | addr < 0x4000 = readPPURegister nes addr
+  | addr < 0x2000 = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
+  | addr < 0x4000 = readPPURegister (ppu nes) addr
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
   | addr >= 0x6000 && addr <= 0xFFFF = readCart (cart nes) addr
@@ -241,7 +218,7 @@ readCpuMemory16 nes addr = do
 
 writeCpuMemory8 :: Nes -> Word16 -> Word8 -> IO ()
 writeCpuMemory8 nes addr v
-  | addr < 0x2000 = VUM.unsafeWrite (ram  nes) (fromIntegral addr `mod` 0x0800) v
+  | addr < 0x2000 = VUM.unsafeWrite (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
   | addr < 0x4000 = writePPURegister nes addr v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = error "APU write not implemented"
@@ -254,187 +231,172 @@ writeCpuMemory16 nes addr v = do
   writeCpuMemory8 nes addr lo
   writeCpuMemory8 nes (addr + 1) hi
 
-newPPU :: PPU
-newPPU = let
+newPPU :: IO PPU
+newPPU = do
+  -- Misc
+  cycles <- newIORef 0
+  scanline <- newIORef 0
+  frameCount <- newIORef 0
+  writeToggle <- newIORef False
+  -- Data
+  oamData <- VUM.replicate 0x100 0x0
+  nameTableData <- VUM.replicate 0x800 0x0
+  paletteData <- VUM.replicate 0x20 0x0
+  screen <- VUM.replicate (256 * 240) (0, 0, 0)
+  -- Addresses
+  currentVramAddress <- newIORef 0x0
+  oamAddress <- newIORef 0x0
+  -- Control register
+  nameTable <- newIORef 0x2000
+  incrementMode <- newIORef Horizontal
+  spriteTable <- newIORef SpriteTable0000
+  bgTable <- newIORef BackgroundTable0000
+  spriteSize <- newIORef Normal
+  nmiEnabled <- newIORef False
+  -- Mask register
+  colorMode <- newIORef Color
+  leftBgVis <- newIORef Hidden
+  leftSpritesVis <- newIORef Hidden
+  bgVis <- newIORef Hidden
+  spriteVis <- newIORef Hidden
+  intensifyReds <- newIORef False
+  intensifyGreens <- newIORef False
+  intensifyBlues <- newIORef False
+  -- Status register
+  lastWrite <- newIORef 0x0
+  spriteOverflow <- newIORef False
+  spriteZeroHit <- newIORef False
+  vBlankStarted <- newIORef False
+  -- Scroll register
+  scrollXY <- newIORef 0x0000
+
+  pure $ PPU
     -- Misc
-    cycles = 0
-    scanline = 0
-    frameCount = 0
-    writeToggle = False
+    cycles scanline frameCount writeToggle
+    -- Data
+    oamData nameTableData paletteData screen
     -- Addresses
-    currentVramAddress = 0x0
-    oamAddress = 0x0
+    currentVramAddress oamAddress
     -- Control register
-    nameTable = 0x2000
-    incrementMode = Horizontal
-    spriteTable = SpriteTable0000
-    bgTable = BackgroundTable0000
-    spriteSize = Normal
-    nmiEnabled = False
+    nameTable incrementMode spriteTable bgTable spriteSize nmiEnabled
     -- Mask register
-    colorMode = Color
-    leftBgVis = Hidden
-    leftSpritesVis = Hidden
-    bgVis = Hidden
-    spriteVis = Hidden
-    intensifyReds = False
-    intensifyGreens = False
-    intensifyBlues = False
+    colorMode leftBgVis leftSpritesVis bgVis spriteVis
+    intensifyReds intensifyGreens intensifyBlues
     -- Status register
-    lastWrite = 0x0
-    spriteOverflow = False
-    spriteZeroHit = False
-    vBlankStarted = False
+    lastWrite spriteOverflow spriteZeroHit vBlankStarted
     -- Scroll register
-    scrollXY = 0x0000
-  in
-    PPU
-      -- Misc
-      cycles scanline frameCount writeToggle
-      -- Addresses
-      currentVramAddress oamAddress
-      -- Control register
-      nameTable incrementMode spriteTable bgTable spriteSize nmiEnabled
-      -- Mask register
-      colorMode leftBgVis leftSpritesVis bgVis spriteVis
-      intensifyReds intensifyGreens intensifyBlues
-      -- Status register
-      lastWrite spriteOverflow spriteZeroHit vBlankStarted
-      -- Scroll register
-      scrollXY
+    scrollXY
 
 readPPU :: Nes -> Ppu a -> IO a
 readPPU nes addr = case addr of
-  PpuCycles           -> ppuCycles <$> (readIORef $ ppu nes)
-  NameTableAddr       -> nameTable <$> (readIORef $ ppu nes)
-  Scanline            -> scanline <$> (readIORef $ ppu nes)
-  FrameCount          -> frameCount <$> (readIORef $ ppu nes)
-  VerticalBlank       -> verticalBlank <$> (readIORef $ ppu nes)
-  GenerateNMI         -> nmiEnabled <$> (readIORef $ ppu nes)
-  BackgroundTableAddr -> bgTable <$> (readIORef $ ppu nes)
-  PaletteData i       -> VUM.unsafeRead (paletteData nes) i
-  Screen coords       -> VUM.unsafeRead (screen nes) (translateXY coords 256)
+  PpuCycles           -> readIORef $ ppuCycles $ ppu nes
+  NameTableAddr       -> readIORef $ nameTable $ ppu nes
+  Scanline            -> readIORef $ scanline $ ppu nes
+  FrameCount          -> readIORef $ frameCount $ ppu nes
+  VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
+  GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
+  BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
+  PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
+  Screen coords       -> VUM.unsafeRead (screen $ ppu nes) (translateXY coords 256)
   PpuMemory8 r        -> readPPUMemory nes r
 
-writePPU :: Nes -> Ppu a -> a -> IO ()
-writePPU nes addr v = case addr of
-  PpuCycles            -> do
-    ppuv <- readIORef (ppu nes)
-    modifyIORef' (ppu nes) (const $ ppuv { ppuCycles = v })
-  Scanline            -> do
-    ppuv <- readIORef (ppu nes)
-    modifyIORef' (ppu nes) (const $ ppuv { scanline = v })
-  FrameCount            -> do
-    ppuv <- readIORef (ppu nes)
-    modifyIORef' (ppu nes) (const $ ppuv { frameCount = v })
-  VerticalBlank            -> do
-    ppuv <- readIORef (ppu nes)
-    modifyIORef' (ppu nes) (const $ ppuv { verticalBlank = v })
-  Screen coords -> VUM.unsafeWrite (screen nes) (translateXY coords 256) v
+writePPU :: PPU -> Ppu a -> a -> IO ()
+writePPU ppu addr v = case addr of
+  PpuCycles     -> modifyIORef' (ppuCycles ppu) (const v)
+  Scanline      -> modifyIORef' (scanline ppu) (const v)
+  FrameCount    -> modifyIORef' (frameCount ppu) (const v)
+  VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
+  Screen coords -> VUM.unsafeWrite (screen ppu) (translateXY coords 256) v
 
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
   | addr' < 0x2000 = readCart (cart nes) addr'
-  | addr' < 0x3F00 = VUM.unsafeRead (nameTableData nes) (fromIntegral $ addr' `mod` 0x800)
-  | addr' < 0x4000 = VUM.unsafeRead (paletteData nes) (fromIntegral $ addr' `mod` 0x20)
+  | addr' < 0x3F00 = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  | addr' < 0x4000 = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
 
 writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
 writePPUMemory nes addr v
   | addr' < 0x2000 = writeCart (cart nes) addr' v
-  | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData nes) (fromIntegral $ addr' `mod` 0x800) v
-  | addr' < 0x4000 = VUM.unsafeWrite (paletteData nes) (fromIntegral $ addr' `mod` 0x20) v
+  | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
+  | addr' < 0x4000 = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
-readPPURegister :: Nes -> Word16 -> IO Word8
-readPPURegister nes addr = case 0x2000 + addr `mod` 8 of
-  0x2002 -> readStatus nes
-  0x2004 -> readOAM nes
-  0x2007 -> readData nes
+readPPURegister :: PPU -> Word16 -> IO Word8
+readPPURegister ppu addr = case 0x2000 + addr `mod` 8 of
+  0x2002 -> readStatus ppu
+  0x2004 -> readOAM ppu
+  0x2007 -> readData ppu
   other  -> error $ "Unimplemented read at " ++ show other
 
-readStatus :: Nes -> IO Word8
-readStatus nes = do
-  ppuv <- readIORef $ ppu nes
-  let r = fromEnum (verticalBlank ppuv) `shiftL` 7
-  let newPpu = ppuv { verticalBlank = False }
-  modifyIORef' (ppu nes) (const newPpu)
+readStatus :: PPU -> IO Word8
+readStatus ppu = do
+  vBlankV <- readIORef $ verticalBlank ppu
+  let r = fromEnum vBlankV `shiftL` 7
+  modifyIORef' (verticalBlank ppu) (const False)
   pure $ fromIntegral r
 
-readOAM :: Nes -> IO Word8
+readOAM :: PPU -> IO Word8
 readOAM ppu = error "Unimplemented PPU readOAM"
 
-readData :: Nes -> IO Word8
+readData :: PPU -> IO Word8
 readData ppu = error "Unimplemented PPU readData "
 
 writePPURegister :: Nes -> Word16 -> Word8 -> IO ()
 writePPURegister nes addr v = case 0x2000 + addr `mod` 8 of
-  0x2000 -> writeControl nes v
-  0x2001 -> writeMask nes v
-  0x2003 -> writeOAMAddress nes v
-  0x2004 -> writeOAMData nes v
-  0x2005 -> writeScroll nes v
-  0x2006 -> writeAddress nes v
+  0x2000 -> writeControl (ppu nes) v
+  0x2001 -> writeMask (ppu nes) v
+  0x2003 -> writeOAMAddress (ppu nes) v
+  0x2004 -> writeOAMData (ppu nes) v
+  0x2005 -> writeScroll (ppu nes) v
+  0x2006 -> writeAddress (ppu nes) v
   0x2007 -> writeData nes v
   0x4014 -> writeDMA nes v
 
-writeControl :: Nes -> Word8 -> IO ()
-writeControl nes v = do
-  ppuv <- readIORef $ ppu nes
-  let newPpu = ppuv {
-    nameTable = case (v `shiftR` 0) .&. 3 of
-      0 -> 0x2000
-      1 -> 0x2400
-      2 -> 0x2800
-      3 -> 0x2C00,
-    incrementMode = if testBit v 2 then Vertical else Horizontal,
-    spriteTable = if testBit v 3 then SpriteTable1000 else SpriteTable0000,
-    bgTable = if testBit v 4 then BackgroundTable1000 else BackgroundTable0000,
-    spriteSize = if testBit v 5 then Double else Normal,
-    nmiEnabled = testBit v 7
-  }
-  modifyIORef' (ppu nes) (const newPpu)
+writeControl :: PPU -> Word8 -> IO ()
+writeControl ppu v = do
+  modifyIORef' (nameTable ppu) $ const $ case (v `shiftR` 0) .&. 3 of
+    0 -> 0x2000
+    1 -> 0x2400
+    2 -> 0x2800
+    3 -> 0x2C00
+  modifyIORef' (incrementMode ppu) $ const $ if testBit v 2 then Vertical else Horizontal
+  modifyIORef' (spriteTable ppu) $ const $ if testBit v 3 then SpriteTable1000 else SpriteTable0000
+  modifyIORef' (bgTable ppu) $ const $ if testBit v 4 then BackgroundTable1000 else BackgroundTable0000
+  modifyIORef' (spriteSize ppu) $ const $ if testBit v 5 then Double else Normal
+  modifyIORef' (nmiEnabled ppu) $ const $ testBit v 7
 
-writeMask :: Nes -> Word8 -> IO ()
-writeMask nes v = do
-  ppuv <- readIORef $ ppu nes
-  let newPpu = ppuv {
-    colorMode = if testBit v 0 then Grayscale else Color,
-    leftBgVisibility = if testBit v 1 then Shown else Hidden,
-    leftSpritesVisibility = if testBit v 2 then Shown else Hidden,
-    bgVisibility = if testBit v 3 then Shown else Hidden,
-    spriteVisibility = if testBit v 4 then Shown else Hidden,
-    intensifyReds = testBit v 5,
-    intensifyGreens = testBit v 6,
-    intensifyBlues = testBit v 7
-  }
-  modifyIORef' (ppu nes) (const newPpu)
+writeMask :: PPU -> Word8 -> IO ()
+writeMask ppu v = do
+  modifyIORef' (colorMode ppu) $ const $ if testBit v 0 then Grayscale else Color
+  modifyIORef' (leftBgVisibility ppu) $ const $ if testBit v 1 then Shown else Hidden
+  modifyIORef' (leftSpritesVisibility ppu) $ const $ if testBit v 2 then Shown else Hidden
+  modifyIORef' (bgVisibility ppu) $ const $ if testBit v 3 then Shown else Hidden
+  modifyIORef' (spriteVisibility ppu) $ const $ if testBit v 4 then Shown else Hidden
+  modifyIORef' (intensifyReds ppu) $ const $ testBit v 5
+  modifyIORef' (intensifyGreens ppu) $ const $ testBit v 6
+  modifyIORef' (intensifyBlues ppu) $ const $ testBit v 7
 
-writeOAMAddress :: Nes -> Word8 -> IO ()
-writeOAMAddress nes v = do
-  ppuv <- readIORef $ ppu nes
-  modifyIORef' (ppu nes) (const $ ppuv { oamAddress = v })
+writeOAMAddress :: PPU -> Word8 -> IO ()
+writeOAMAddress ppu v = modifyIORef' (oamAddress ppu) (const v)
 
-writeOAMData :: Nes -> Word8 -> IO ()
-writeOAMData nes v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
+writeOAMData :: PPU -> Word8 -> IO ()
+writeOAMData ppu v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
 
-writeScroll :: Nes -> Word8 -> IO ()
-writeScroll nes v = do
-  ppuv <- readIORef $ ppu nes
-  let scrollXYv = scrollXY ppuv
-  let newPpu = ppuv { scrollXY = (scrollXYv `shiftL` 8) .|. toWord16 v }
-  modifyIORef' (ppu nes) (const newPpu)
+writeScroll :: PPU -> Word8 -> IO ()
+writeScroll ppu v = do
+  modifyIORef' (scrollXY ppu) (`shiftL` 8)
+  modifyIORef' (scrollXY ppu) (.|. toWord16 v)
 
-writeAddress :: Nes -> Word8 -> IO ()
-writeAddress nes v = do
-  ppuv <- readIORef $ ppu nes
-  let wt = writeToggle ppuv
-  let tVrV = currentVramAddress ppuv
+writeAddress :: PPU -> Word8 -> IO ()
+writeAddress ppu v = do
+  wt <- readIORef $ writeToggle ppu
+  tVrV <- readIORef $ currentVramAddress ppu
   let v' = if wt then (tVrV .&. 0xFF00) .|. (toWord16 v) else (tVrV .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
-  let newPpu = ppuv { currentVramAddress = v', writeToggle = not wt }
-  modifyIORef' (ppu nes) (const newPpu)
+  modifyIORef' (currentVramAddress ppu) (const v')
+  modifyIORef' (writeToggle ppu) (const $ not wt)
 
 writeDMA :: Nes -> Word8 -> IO ()
 writeDMA nes v = do
@@ -444,26 +406,23 @@ writeDMA nes v = do
     write :: Nes -> Int -> Word8 -> IO ()
     write nes i addr =
       if i < 255 then do
-        ppuv <- readIORef $ ppu nes
-        let oamA = oamAddress ppuv
+        oamA <- readIORef $ oamAddress (ppu nes)
         oamV <- readCpuMemory8 nes (toWord16 addr)
-        VUM.unsafeWrite (oamData nes) (toInt oamA) oamV
-        let newPpu = ppuv { oamAddress = (oamAddress ppuv) + 1 }
-        modifyIORef' (ppu nes) (const newPpu)
+        VUM.unsafeWrite (oamData $ ppu nes) (toInt oamA) oamV
+        modifyIORef' (oamAddress (ppu nes)) (+ 1)
         write nes (i + 1) (addr + 1)
       else
         pure ()
 
 writeData :: Nes -> Word8 -> IO ()
 writeData nes v = do
-  ppuv <- readIORef $ ppu nes
-  let addr = currentVramAddress ppuv
+  addr <- readIORef $ currentVramAddress (ppu nes)
   writePPUMemory nes addr v
-  let inc = case incrementMode ppuv of
+  incMode <- readIORef $ incrementMode (ppu nes)
+  let inc = case incMode of
         Horizontal -> 1
         Vertical   -> 32
-  let newPpu = ppuv { currentVramAddress = (currentVramAddress ppuv) + inc }
-  modifyIORef' (ppu nes) (const newPpu)
+  modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
 
 translateXY :: (Int, Int) -> Int -> Int
 translateXY (x, y) width = x + (y * width)
