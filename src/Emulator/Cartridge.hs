@@ -7,7 +7,7 @@ module Emulator.Cartridge (
 
 import           Control.Monad.ST
 import qualified Data.ByteString             as BS
-import           Data.STRef
+import           Data.IORef
 import qualified Data.Vector.Unboxed         as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
@@ -23,16 +23,16 @@ data INesFileHeader = INesFileHeader {
   numRam   :: Int
 } deriving (Eq, Show)
 
-data Cartridge s = Cartridge {
+data Cartridge = Cartridge {
   header   :: INesFileHeader,
-  chrRom   :: VUM.MVector s Word8,
-  prgRom   :: VUM.MVector s Word8,
-  sRam     :: VUM.MVector s Word8,
+  chrRom   :: VUM.MVector RealWorld Word8,
+  prgRom   :: VUM.MVector RealWorld Word8,
+  sRam     :: VUM.MVector RealWorld Word8,
   prgBanks :: Int,
   chrBanks :: Int,
-  prgBank1 :: STRef s Int,
-  prgBank2 :: STRef s Int,
-  chrBank1 :: STRef s Int
+  prgBank1 :: IORef Int,
+  prgBank2 :: IORef Int,
+  chrBank1 :: IORef Int
 }
 
 parseHeader :: BS.ByteString -> INesFileHeader
@@ -44,7 +44,7 @@ parseHeader bs = INesFileHeader
   (fromIntegral $ BS.index bs 7)
   (fromIntegral $ BS.index bs 8)
 
-parseCart :: BS.ByteString -> ST s (Cartridge s)
+parseCart :: BS.ByteString -> IO Cartridge
 parseCart bs = do
   let header @ (INesFileHeader _ numPrg numChr _ _ _) = parseHeader bs
   let prgOffset  = numPrg * prgRomSize
@@ -58,31 +58,31 @@ parseCart bs = do
   sram <- VUM.replicate 0x2000 0
 
   let prgBanks = VUM.length prg `div` 0x4000
-  prgBank1 <- newSTRef 0
-  prgBank2 <- newSTRef $ prgBanks - 1
+  prgBank1 <- newIORef 0
+  prgBank2 <- newIORef $ prgBanks - 1
 
   let chrBanks = VUM.length chr `div` 0x2000
-  chrBank1 <- newSTRef 0
+  chrBank1 <- newIORef 0
 
   pure $ Cartridge header chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1
 
-readCart :: Cartridge s -> Word16 -> ST s Word8
+readCart :: Cartridge -> Word16 -> IO Word8
 readCart (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
   | addr' <  0x2000 = VUM.unsafeRead chr addr'
   | addr' >= 0xC000 = do
-    prgBank2V <- readSTRef prgBank2
+    prgBank2V <- readIORef prgBank2
     VUM.unsafeRead prg ((prgBank2V * 0x4000) + (addr' - 0xC000))
   | addr' >= 0x8000 = do
-    prgBank1V <- readSTRef prgBank1
+    prgBank1V <- readIORef prgBank1
     VUM.unsafeRead prg ((prgBank1V * 0x4000) + (addr' - 0x8000))
   | addr' >= 0x6000 = VUM.unsafeRead prg (addr' - 0x6000)
   | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 
-writeCart :: Cartridge s -> Word16 -> Word8 -> ST s ()
+writeCart :: Cartridge -> Word16 -> Word8 -> IO ()
 writeCart (Cartridge _ chr _ sram _ _ prgBank1 _ _) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chr addr' v
-  | addr' >= 0x8000 = modifySTRef prgBank1 (const $ toInt v)
+  | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v)
   | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
   | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
   where addr' = fromIntegral addr
