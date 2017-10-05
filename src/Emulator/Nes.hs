@@ -20,14 +20,15 @@ module Emulator.Nes (
 ) where
 
 import           Control.Monad.ST
-import           Data.Bits                   (shiftL, shiftR, testBit, (.&.),
-                                              (.|.))
+import           Data.Bits                    (shiftL, shiftR, testBit, (.&.),
+                                               (.|.))
 import           Data.IORef
-import qualified Data.Vector.Unboxed.Mutable as VUM
+import qualified Data.Vector.Storable.Mutable as VUM
+import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
 import           Emulator.Cartridge
 import           Emulator.Util
-import           Prelude                     hiding (read, replicate)
+import           Prelude                      hiding (read, replicate)
 
 data IncrementMode = Horizontal | Vertical
 
@@ -53,15 +54,15 @@ data Interrupt
   deriving (Eq, Show)
 
 data CPU = CPU {
-  pc        :: IORef       Word16,
-  sp        :: IORef       Word8,
-  a         :: IORef       Word8,
-  x         :: IORef       Word8,
-  y         :: IORef       Word8,
-  p         :: IORef       Word8,
-  ram       :: VUM.MVector RealWorld Word8,
-  cycles    :: IORef       Int,
-  interrupt :: IORef       (Maybe Interrupt)
+  pc        :: IORef        Word16,
+  sp        :: IORef        Word8,
+  a         :: IORef        Word8,
+  x         :: IORef        Word8,
+  y         :: IORef        Word8,
+  p         :: IORef        Word8,
+  ram       :: VUM.IOVector Word8,
+  cycles    :: IORef        Int,
+  interrupt :: IORef        (Maybe Interrupt)
 }
 
 data PPU = PPU {
@@ -71,10 +72,10 @@ data PPU = PPU {
   frameCount            :: IORef Int,
   writeToggle           :: IORef Bool,
   -- Data
-  oamData               :: VUM.MVector RealWorld Word8,
-  nameTableData         :: VUM.MVector RealWorld Word8,
-  paletteData           :: VUM.MVector RealWorld Word8,
-  screen                :: VUM.MVector RealWorld (Word8, Word8, Word8),
+  oamData               :: VUM.IOVector Word8,
+  nameTableData         :: VUM.IOVector Word8,
+  paletteData           :: VUM.IOVector Word8,
+  screen                :: VUM.IOVector Word8,
   -- Addresses
   currentVramAddress    :: IORef Word16,
   oamAddress            :: IORef Word8,
@@ -129,6 +130,7 @@ data Ppu a where
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
   Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
+  ScreenBuffer :: Ppu (VUM.IOVector Word8)
 
 data Address a where
   Cpu :: Cpu a -> Address a
@@ -242,7 +244,7 @@ newPPU = do
   oamData <- VUM.replicate 0x100 0x0
   nameTableData <- VUM.replicate 0x800 0x0
   paletteData <- VUM.replicate 0x20 0x0
-  screen <- VUM.replicate (256 * 240) (0, 0, 0)
+  screen <- VUM.replicate (256 * 240 * 3) 255
   -- Addresses
   currentVramAddress <- newIORef 0x0
   oamAddress <- newIORef 0x0
@@ -297,7 +299,7 @@ readPPU nes addr = case addr of
   GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
   PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
-  Screen coords       -> VUM.unsafeRead (screen $ ppu nes) (translateXY coords 256)
+  ScreenBuffer        -> pure $ screen $ ppu nes
   PpuMemory8 r        -> readPPUMemory nes r
 
 writePPU :: PPU -> Ppu a -> a -> IO ()
@@ -306,7 +308,13 @@ writePPU ppu addr v = case addr of
   Scanline      -> modifyIORef' (scanline ppu) (const v)
   FrameCount    -> modifyIORef' (frameCount ppu) (const v)
   VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
-  Screen coords -> VUM.unsafeWrite (screen ppu) (translateXY coords 256) v
+  Screen coords -> do
+    let (r, g, b) = v
+
+
+    VUM.write (screen ppu) ((translateXY coords 256 * 3) + 0) r
+    VUM.write (screen ppu) ((translateXY coords 256 * 3) + 1) g
+    VUM.write (screen ppu) ((translateXY coords 256 * 3) + 2) b
 
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr

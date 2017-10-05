@@ -10,7 +10,7 @@ import           Data.Word
 import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Opcode
-import           Emulator.Trace         (Trace (..))
+import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
 import           Prelude                hiding (and, compare)
 
@@ -21,7 +21,7 @@ reset = do
   store (Cpu Sp) 0xFD
   store (Cpu P) 0x24
 
-step :: IOEmulator (Int, Trace)
+step :: IOEmulator Int
 step = do
   -- Start counting the number of cycles.
   -- Some of the opcodes (the branch ones)
@@ -30,12 +30,13 @@ step = do
   handleInterrupts
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
-  trace <- trace opcode
+  -- trace <- trace opcode
+  -- liftIO $ putStrLn (renderTrace trace)
   addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
   runInstruction opcode addr
   endingCycles <- load $ Cpu CpuCycles
-  pure (endingCycles - startingCycles, trace)
+  pure $ endingCycles - startingCycles
 
 trace :: Opcode -> IOEmulator Trace
 trace op = do

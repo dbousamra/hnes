@@ -21,8 +21,8 @@ library
                      , Emulator.Opcode
                      , Emulator.Util
                      , Emulator.Trace
-  ghc-options:       -O4
-                     -fno-warn-name-shadowing 
+  ghc-options:       -fno-warn-name-shadowing 
+                     -O2 
   build-depends:       base >= 4.7 && < 5
                      , mtl
                      , vector
@@ -36,14 +36,12 @@ executable hnes
   hs-source-dirs:      app
   main-is:             Main.hs
   default-language:    Haskell2010
-  ghc-options:        -O4
-                      -rtsopts
-                      -threaded 
+  ghc-options:        -O2 
   build-depends:       base >= 4.7 && < 5
                      , hnes
                      , mtl
+                     , time
                      , vector
-                     , text
                      , bytestring
                      , sdl2
 

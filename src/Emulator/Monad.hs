@@ -8,13 +8,12 @@ module Emulator.Monad (
 ) where
 
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
-import           Control.Monad.ST     (RealWorld, stToIO)
 import           Control.Monad.Trans  (MonadIO, lift)
 import qualified Data.ByteString      as BS
 import           Emulator.Cartridge   (parseCart)
 import           Emulator.Nes         as Nes
 
-newtype IOEmulator a = IOEmulator (ReaderT Nes  IO a)
+newtype IOEmulator a = IOEmulator (ReaderT Nes IO a)
   deriving (Functor, Applicative, Monad, MonadIO)
 
 load :: Nes.Address a -> IOEmulator a
