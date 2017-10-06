@@ -18,12 +18,10 @@ main :: IO ()
 main = do
   filename <- getArgs
   -- Set up SDL
-  liftIO $ SDL.initializeAll
-
+  SDL.initializeAll
   let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
-  window <- liftIO $ SDL.createWindow "hnes" config
-  renderer <- liftIO $ SDL.createRenderer window (-1) SDL.defaultRenderer
-
+  window <- SDL.createWindow "hnes" config
+  renderer <- SDL.createRenderer window (-1) SDL.defaultRenderer
   -- Create NES
   cart' <- BS.readFile $ head filename
   runIOEmulator cart' $ do
@@ -50,7 +48,7 @@ appLoop renderer = do
 render' :: SDL.Renderer -> IOEmulator SDL.Texture
 render' renderer = do
   mv <- load $ Ppu ScreenBuffer
-  surface <- createRGBSurfaceFrom mv (V2 (256 * 1) (240 * 1)) (256 * 3) SDL.RGB24 -- RGB332
+  surface <- createRGBSurfaceFrom mv (V2 256 240) (256 * 3) SDL.RGB24
   texture <- createTextureFromSurface renderer surface
   SDL.freeSurface surface
   pure texture
