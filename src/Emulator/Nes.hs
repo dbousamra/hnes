@@ -310,11 +310,10 @@ writePPU ppu addr v = case addr of
   VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
   Screen coords -> do
     let (r, g, b) = v
-
-
-    VUM.write (screen ppu) ((translateXY coords 256 * 3) + 0) r
-    VUM.write (screen ppu) ((translateXY coords 256 * 3) + 1) g
-    VUM.write (screen ppu) ((translateXY coords 256 * 3) + 2) b
+    let offset = translateXY coords 256 * 3
+    VUM.write (screen ppu) (offset + 0) r
+    VUM.write (screen ppu) (offset + 1) g
+    VUM.write (screen ppu) (offset + 2) b
 
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
