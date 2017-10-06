@@ -21,6 +21,7 @@ library
                      , Emulator.Opcode
                      , Emulator.Util
                      , Emulator.Trace
+                     , Emulator.Controller
   default-extensions: Strict
   ghc-options:       -fno-warn-name-shadowing 
                      -O2

@@ -1,7 +1,6 @@
 module Emulator (
     step
   , stepFrame
-  , stepCPU
   , reset
 ) where
 
@@ -26,9 +25,6 @@ stepFrame = do
   untilM_ step $ do
     frameCount' <- load $ Ppu FrameCount
     pure $ frameCount' == (frameCount + 1)
-
-stepCPU :: IOEmulator ()
-stepCPU = void CPU.step
 
 reset :: IOEmulator ()
 reset = CPU.reset >> PPU.reset
