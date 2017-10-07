@@ -31,6 +31,7 @@ appLoop :: SDL.Renderer -> IOEmulator ()
 appLoop renderer = do
   _ <- stepFrame
   intents <- liftIO $ eventsToIntents <$> SDL.pollEvents
+  liftIO $ putStrLn (show intents)
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer
@@ -50,7 +51,7 @@ eventsToIntents events = catMaybes $ eventToIntent . SDL.eventPayload <$> events
   where
     eventToIntent SDL.QuitEvent = Just Exit
     eventToIntent (SDL.KeyboardEvent k) = case k of
-      (SDL.KeyboardEventData _ SDL.Pressed False keysym) ->
+      (SDL.KeyboardEventData _ SDL.Pressed _ keysym) ->
         case SDL.keysymKeycode keysym of
           SDL.KeycodeQ      -> Just Exit
           SDL.KeycodeZ      -> Just (KeyPress Controller.A)
