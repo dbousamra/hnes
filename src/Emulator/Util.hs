@@ -43,4 +43,3 @@ firstNibble = toWord16 . fst . splitW16
 sliceBS :: Int -> Int -> BS.ByteString -> BS.ByteString
 sliceBS from to xs = BS.take (to - from) (BS.drop from xs)
 
-

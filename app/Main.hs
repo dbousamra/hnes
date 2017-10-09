@@ -29,9 +29,9 @@ main = do
 
 appLoop :: SDL.Renderer -> IOEmulator ()
 appLoop renderer = do
-  _ <- stepFrame
   intents <- liftIO $ eventsToIntents <$> SDL.pollEvents
-  liftIO $ putStrLn (show intents)
+  store Keys (intentsToKeys intents)
+  stepFrame
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer
@@ -60,12 +60,17 @@ eventsToIntents events = catMaybes $ eventToIntent . SDL.eventPayload <$> events
           SDL.KeycodeDown   -> Just (KeyPress Controller.Down)
           SDL.KeycodeLeft   -> Just (KeyPress Controller.Left)
           SDL.KeycodeRight  -> Just (KeyPress Controller.Right)
-          SDL.KeycodeR      -> Just (KeyPress Controller.Reset)
           SDL.KeycodeSpace  -> Just (KeyPress Controller.Select)
           SDL.KeycodeReturn -> Just (KeyPress Controller.Start)
           _                 -> Nothing
       _ -> Nothing
     eventToIntent _ = Nothing
+
+intentsToKeys :: [Intent] -> [Controller.Key]
+intentsToKeys = catMaybes . fmap (\x -> case x of
+    KeyPress a -> Just a
+    _          -> Nothing
+  )
 
 data Intent
   = Exit

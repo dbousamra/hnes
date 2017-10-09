@@ -27,8 +27,10 @@ import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
 import           Emulator.Cartridge
+import qualified Emulator.Controller          as Controller
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
+import           System.Random
 
 data IncrementMode = Horizontal | Vertical
 
@@ -43,9 +45,10 @@ data ColorMode = Color | Grayscale
 data Visibility = Hidden | Shown
 
 data Nes = Nes {
-  cpu  :: CPU,
-  ppu  :: PPU,
-  cart :: Cartridge
+  cpu        :: CPU,
+  ppu        :: PPU,
+  cart       :: Cartridge,
+  controller :: Controller.Controller
 }
 
 data Interrupt
@@ -135,6 +138,7 @@ data Ppu a where
 data Address a where
   Cpu :: Cpu a -> Address a
   Ppu :: Ppu a -> Address a
+  Keys :: Address [Controller.Key]
 
 data Flag
   = Negative
@@ -151,7 +155,8 @@ new :: Cartridge -> IO Nes
 new cart = do
   cpu <- newCPU
   ppu <- newPPU
-  pure $ Nes cpu ppu cart
+  controller <- newController
+  pure $ Nes cpu ppu cart controller
 
 read :: Nes -> Address a -> IO a
 read nes addr = case addr of
@@ -162,6 +167,7 @@ write :: Nes -> Address a -> a -> IO ()
 write nes addr v = case addr of
   Cpu r -> writeCPU nes r v
   Ppu r -> writePPU (ppu nes) r v
+  Keys  -> writeKeys nes v
 
 newCPU :: IO CPU
 newCPU = do
@@ -207,7 +213,7 @@ readCpuMemory8 :: Nes -> Word16 -> IO Word8
 readCpuMemory8 nes addr
   | addr < 0x2000 = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
   | addr < 0x4000 = readPPURegister (ppu nes) addr
-  | addr >= 0x4000 && addr <= 0x4017 = pure 0
+  | addr == 0x4016 = Controller.read $ controller nes
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
   | addr >= 0x6000 && addr <= 0xFFFF = readCart (cart nes) addr
   | otherwise = error "Erroneous read detected!"
@@ -222,6 +228,7 @@ writeCpuMemory8 :: Nes -> Word16 -> Word8 -> IO ()
 writeCpuMemory8 nes addr v
   | addr < 0x2000 = VUM.unsafeWrite (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
   | addr < 0x4000 = writePPURegister nes addr v
+  | addr == 0x4016 = Controller.write (controller nes) v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = error "APU write not implemented"
   | addr >= 0x4020 && addr <= 0xFFFF = error "Cannot write to cart space"
@@ -430,6 +437,15 @@ writeData nes v = do
         Horizontal -> 1
         Vertical   -> 32
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
+
+writeKeys :: Nes -> [Controller.Key] -> IO ()
+writeKeys = Controller.setKeysDown . controller
+
+newController :: IO Controller.Controller
+newController = Controller.new
+
+writeController :: Nes -> Word8 -> IO ()
+writeController = Controller.write . controller
 
 translateXY :: (Int, Int) -> Int -> Int
 translateXY (x, y) width = x + (y * width)
