@@ -214,6 +214,7 @@ readCpuMemory8 nes addr
   | addr < 0x2000 = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
   | addr < 0x4000 = readPPURegister (ppu nes) addr
   | addr == 0x4016 = Controller.read $ controller nes
+  | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
   | addr >= 0x6000 && addr <= 0xFFFF = Cartridge.read (cart nes) addr
   | otherwise = error "Erroneous read detected!"
