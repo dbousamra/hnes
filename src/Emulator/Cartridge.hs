@@ -1,8 +1,8 @@
 module Emulator.Cartridge (
     Cartridge(..)
-  , parseCart
-  , readCart
-  , writeCart
+  , parse
+  , read
+  , write
 ) where
 
 import           Control.Monad.ST
@@ -44,8 +44,8 @@ parseHeader bs = INesFileHeader
   (fromIntegral $ BS.index bs 7)
   (fromIntegral $ BS.index bs 8)
 
-parseCart :: BS.ByteString -> IO Cartridge
-parseCart bs = do
+parse :: BS.ByteString -> IO Cartridge
+parse bs = do
   let header @ (INesFileHeader _ numPrg numChr _ _ _) = parseHeader bs
   let prgOffset  = numPrg * prgRomSize
   let prgRom = sliceBS headerSize (headerSize + prgOffset) bs
@@ -66,8 +66,8 @@ parseCart bs = do
 
   pure $ Cartridge header chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1
 
-readCart :: Cartridge -> Word16 -> IO Word8
-readCart (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
+read :: Cartridge -> Word16 -> IO Word8
+read (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
   | addr' <  0x2000 = VUM.unsafeRead chr addr'
   | addr' >= 0xC000 = do
     prgBank2V <- readIORef prgBank2
@@ -79,8 +79,8 @@ readCart (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
   | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 
-writeCart :: Cartridge -> Word16 -> Word8 -> IO ()
-writeCart (Cartridge _ chr _ sram _ _ prgBank1 _ _) addr v
+write :: Cartridge -> Word16 -> Word8 -> IO ()
+write (Cartridge _ chr _ sram _ _ prgBank1 _ _) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chr addr' v
   | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v)
   | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v

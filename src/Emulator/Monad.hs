@@ -10,7 +10,7 @@ module Emulator.Monad (
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.Trans  (MonadIO, lift)
 import qualified Data.ByteString      as BS
-import           Emulator.Cartridge   (parseCart)
+import qualified Emulator.Cartridge   as Cartridge
 import           Emulator.Nes         as Nes
 
 newtype IOEmulator a = IOEmulator (ReaderT Nes IO a)
@@ -28,6 +28,6 @@ store address value = IOEmulator $ do
 
 runIOEmulator :: BS.ByteString -> IOEmulator a ->  IO a
 runIOEmulator bs (IOEmulator reader) = do
-  cart <- parseCart bs
+  cart <- Cartridge.parse bs
   nes <- Nes.new cart
   runReaderT reader nes

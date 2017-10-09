@@ -26,7 +26,7 @@ import           Data.IORef
 import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
-import           Emulator.Cartridge
+import qualified Emulator.Cartridge           as Cartridge
 import qualified Emulator.Controller          as Controller
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
@@ -47,7 +47,7 @@ data Visibility = Hidden | Shown
 data Nes = Nes {
   cpu        :: CPU,
   ppu        :: PPU,
-  cart       :: Cartridge,
+  cart       :: Cartridge.Cartridge,
   controller :: Controller.Controller
 }
 
@@ -151,11 +151,11 @@ data Flag
   | Carry
   deriving (Enum)
 
-new :: Cartridge -> IO Nes
+new :: Cartridge.Cartridge -> IO Nes
 new cart = do
   cpu <- newCPU
   ppu <- newPPU
-  controller <- newController
+  controller <- Controller.new
   pure $ Nes cpu ppu cart controller
 
 read :: Nes -> Address a -> IO a
@@ -215,7 +215,7 @@ readCpuMemory8 nes addr
   | addr < 0x4000 = readPPURegister (ppu nes) addr
   | addr == 0x4016 = Controller.read $ controller nes
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
-  | addr >= 0x6000 && addr <= 0xFFFF = readCart (cart nes) addr
+  | addr >= 0x6000 && addr <= 0xFFFF = Cartridge.read (cart nes) addr
   | otherwise = error "Erroneous read detected!"
 
 readCpuMemory16 :: Nes -> Word16 -> IO Word16
@@ -324,7 +324,7 @@ writePPU ppu addr v = case addr of
 
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
-  | addr' < 0x2000 = readCart (cart nes) addr'
+  | addr' < 0x2000 = Cartridge.read (cart nes) addr'
   | addr' < 0x3F00 = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
   | addr' < 0x4000 = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
   | otherwise = error "Erroneous read detected!"
@@ -332,7 +332,7 @@ readPPUMemory nes addr
 
 writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
 writePPUMemory nes addr v
-  | addr' < 0x2000 = writeCart (cart nes) addr' v
+  | addr' < 0x2000 = Cartridge.write (cart nes) addr' v
   | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
   | addr' < 0x4000 = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
   | otherwise = error "Erroneous write detected!"
@@ -440,12 +440,6 @@ writeData nes v = do
 
 writeKeys :: Nes -> [Controller.Key] -> IO ()
 writeKeys = Controller.setKeysDown . controller
-
-newController :: IO Controller.Controller
-newController = Controller.new
-
-writeController :: Nes -> Word8 -> IO ()
-writeController = Controller.write . controller
 
 translateXY :: (Int, Int) -> Int -> Int
 translateXY (x, y) width = x + (y * width)
