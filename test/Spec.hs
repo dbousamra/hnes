@@ -20,8 +20,8 @@ tests = testGroup "Tests" [nestest]
 
 nestest :: TestTree
 nestest = testCase "nestest" $ do
-  rom <- BS.readFile "roms/nestest.nes"
-  lines <- lines <$> readFile "roms/nestest.log"
+  rom <- BS.readFile "roms/cpu/nestest.nes"
+  lines <- lines <$> readFile "roms/cpu/nestest.log"
   runIOEmulator rom $ do
     store (Cpu Pc) 0xC000
     emulate lines
