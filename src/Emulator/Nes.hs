@@ -232,7 +232,7 @@ writeCpuMemory8 nes addr v
   | addr == 0x4016 = Controller.write (controller nes) v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = error "APU write not implemented"
-  | addr >= 0x4020 && addr <= 0xFFFF = error "Cannot write to cart space"
+  | addr >= 0x4020 && addr <= 0xFFFF = Cartridge.write (cart nes) addr v
   | otherwise = error "Erroneous write detected!"
 
 writeCpuMemory16 :: Nes -> Word16 -> Word16 -> IO ()
