@@ -19,6 +19,7 @@ module Emulator.Nes (
   , new
 ) where
 
+import           Control.Monad
 import           Control.Monad.ST
 import           Data.Bits                    (shiftL, shiftR, testBit, (.&.),
                                                (.|.))
@@ -448,14 +449,12 @@ writeDMA nes v = do
   where
     write :: Nes -> Int -> Word8 -> IO ()
     write nes i addr =
-      if i < 255 then do
+      when (i < 255) $ do
         oamA <- readIORef $ oamAddress (ppu nes)
         oamV <- readCpuMemory8 nes (toWord16 addr)
         VUM.unsafeWrite (oamData $ ppu nes) (toInt oamA) oamV
         modifyIORef' (oamAddress (ppu nes)) (+ 1)
         write nes (i + 1) (addr + 1)
-      else
-        pure ()
 
 writeData :: Nes -> Word8 -> IO ()
 writeData nes v = do

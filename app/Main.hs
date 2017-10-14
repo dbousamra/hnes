@@ -6,11 +6,13 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Data.Maybe             (catMaybes)
+import qualified Data.Text              as T
 import           Emulator               (reset, stepFrame)
 import           Emulator.Controller    as Controller
 import           Emulator.Monad
 import           Emulator.Nes
 import           SDL                    as SDL
+import           SDL.Time
 import           System.Environment     (getArgs)
 
 main :: IO ()
@@ -18,10 +20,12 @@ main = do
   filename <- getArgs
   -- Set up SDL
   SDL.initializeAll
+  -- Create Window
   let windowConfig = SDL.defaultWindow { windowInitialSize = V2 512 480 }
   window <- SDL.createWindow "hnes" windowConfig
+  -- Create Renderer
   let rendererConfig = RendererConfig {
-    rendererType          = AcceleratedVSyncRenderer,
+    rendererType          = AcceleratedRenderer,
     rendererTargetTexture = True
   }
   renderer <- SDL.createRenderer window (-1) rendererConfig
@@ -29,17 +33,26 @@ main = do
   cart' <- BS.readFile $ head filename
   runIOEmulator cart' $ do
     reset
-    appLoop renderer
+    appLoop 0 0 renderer window
 
-appLoop :: SDL.Renderer -> IOEmulator ()
-appLoop renderer = do
+appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator ()
+appLoop lastTime frames renderer window = do
   intents <- liftIO $ eventsToIntents <$> SDL.pollEvents
   store Keys (intentsToKeys intents)
   stepFrame
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer
-  unless (elem Exit intents) (appLoop renderer)
+
+  time <- SDL.Time.time
+  let diff = time - lastTime
+
+  if (diff > 1.0) then do
+    let fps = round $ fromIntegral frames / diff
+    (windowTitle window) $= (T.pack $ "FPS = " ++ show fps)
+    unless (elem Exit intents) (appLoop time 0 renderer window)
+  else
+    unless (elem Exit intents) (appLoop lastTime (frames + 1) renderer window)
 
 
 render :: SDL.Renderer -> IOEmulator SDL.Texture
