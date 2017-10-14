@@ -18,9 +18,13 @@ main = do
   filename <- getArgs
   -- Set up SDL
   SDL.initializeAll
-  let config = SDL.defaultWindow { windowInitialSize = V2 512 480 }
-  window <- SDL.createWindow "hnes" config
-  renderer <- SDL.createRenderer window (-1) SDL.defaultRenderer
+  let windowConfig = SDL.defaultWindow { windowInitialSize = V2 512 480 }
+  window <- SDL.createWindow "hnes" windowConfig
+  let rendererConfig = RendererConfig {
+    rendererType          = AcceleratedVSyncRenderer,
+    rendererTargetTexture = True
+  }
+  renderer <- SDL.createRenderer window (-1) rendererConfig
   -- Create NES
   cart' <- BS.readFile $ head filename
   runIOEmulator cart' $ do

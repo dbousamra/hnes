@@ -30,8 +30,6 @@ step = do
   handleInterrupts
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
-  -- trace <- trace opcode
-  -- liftIO $ putStrLn (renderTrace trace)
   addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
   runInstruction opcode addr

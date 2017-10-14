@@ -103,9 +103,10 @@ data PPU = PPU {
   spriteOverflow        :: IORef Bool,
   spriteZeroHit         :: IORef Bool,
   verticalBlank         :: IORef Bool,
-
   -- Scroll register
-  scrollXY              :: IORef Word16
+  scrollXY              :: IORef Word16,
+  -- Data register
+  dataV                 :: IORef Word8
 }
 
 -- GADTs are used to represent addressing
@@ -129,6 +130,8 @@ data Ppu a where
   BackgroundTableAddr :: Ppu BackgroundTableAddr
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
+  ScrollX :: Ppu Word16
+  ScrollY :: Ppu Word16
   PaletteData :: Int -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
@@ -212,7 +215,7 @@ readCPU nes addr = case addr of
 readCpuMemory8 :: Nes -> Word16 -> IO Word8
 readCpuMemory8 nes addr
   | addr < 0x2000 = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
-  | addr < 0x4000 = readPPURegister (ppu nes) addr
+  | addr < 0x4000 = readPPURegister nes addr
   | addr == 0x4016 = Controller.read $ controller nes
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
@@ -279,6 +282,8 @@ newPPU = do
   vBlankStarted <- newIORef False
   -- Scroll register
   scrollXY <- newIORef 0x0000
+  -- Data register
+  dataV <- newIORef 0x0
 
   pure $ PPU
     -- Misc
@@ -296,6 +301,9 @@ newPPU = do
     lastWrite spriteOverflow spriteZeroHit vBlankStarted
     -- Scroll register
     scrollXY
+    -- Data register
+    dataV
+
 
 readPPU :: Nes -> Ppu a -> IO a
 readPPU nes addr = case addr of
@@ -306,6 +314,8 @@ readPPU nes addr = case addr of
   VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
   GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
+  ScrollX             -> fmap (`shiftR` 8) (readIORef $ scrollXY $ ppu nes)
+  ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
   PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
   ScreenBuffer        -> pure $ screen $ ppu nes
   PpuMemory8 r        -> readPPUMemory nes r
@@ -339,11 +349,11 @@ writePPUMemory nes addr v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
-readPPURegister :: PPU -> Word16 -> IO Word8
-readPPURegister ppu addr = case 0x2000 + addr `mod` 8 of
-  0x2002 -> readStatus ppu
-  0x2004 -> readOAM ppu
-  0x2007 -> readData ppu
+readPPURegister :: Nes -> Word16 -> IO Word8
+readPPURegister nes addr = case 0x2000 + addr `mod` 8 of
+  0x2002 -> readStatus (ppu nes)
+  0x2004 -> readOAM (ppu nes)
+  0x2007 -> readData nes
   other  -> error $ "Unimplemented read at " ++ show other
 
 readStatus :: PPU -> IO Word8
@@ -356,8 +366,26 @@ readStatus ppu = do
 readOAM :: PPU -> IO Word8
 readOAM ppu = error "Unimplemented PPU readOAM"
 
-readData :: PPU -> IO Word8
-readData ppu = error "Unimplemented PPU readData "
+readData :: Nes -> IO Word8
+readData nes = do
+  addr <- readIORef $ currentVramAddress (ppu nes)
+
+  rv <- if (addr `mod` 0x4000) < 0x3F00 then do
+    v <- readPPUMemory nes addr
+    buffered <- readIORef (dataV $ ppu nes)
+    modifyIORef' (dataV $ ppu nes) (const v)
+    pure buffered
+  else do
+    v' <- readPPUMemory nes (addr - 0x1000)
+    modifyIORef' (dataV $ ppu nes) (const v')
+    readPPUMemory nes addr
+
+  incMode <- readIORef $ incrementMode (ppu nes)
+  let inc = case incMode of
+        Horizontal -> 1
+        Vertical   -> 32
+  modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
+  pure rv
 
 writePPURegister :: Nes -> Word16 -> Word8 -> IO ()
 writePPURegister nes addr v = case 0x2000 + addr `mod` 8 of

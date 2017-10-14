@@ -4,7 +4,9 @@ module Emulator.PPU (
 ) where
 
 import           Control.Monad
-import           Data.Bits      (shiftL, shiftR, (.&.), (.|.))
+import           Control.Monad.IO.Class
+import           Data.Bits              (shiftL, shiftR, (.&.), (.|.))
+import qualified Data.Vector            as V
 import           Data.Word
 import           Emulator.Monad
 import           Emulator.Nes
@@ -16,23 +18,45 @@ reset = do
   store (Ppu Scanline) 240
   store (Ppu VerticalBlank) False
 
-renderScanline :: IOEmulator ()
-renderScanline = do
-  nametable <- load (Ppu NameTableAddr)
-  y <- load (Ppu Scanline)
+renderScanline :: Int -> IOEmulator ()
+renderScanline scanline = do
+  sx <- fromIntegral <$> load (Ppu ScrollX)
+  sy <- fromIntegral <$> load (Ppu ScrollY)
+
+  (y, nametable) <- do
+    let y = sy + scanline
+    nametable <- load (Ppu NameTableAddr)
+    if y >= 240
+      then (pure (y - 240, nametable + 2))
+      else pure (y, nametable)
+
+
+  let nameTable1 = (nametable + 0) `mod` 4
+  let nameTable2 = (nametable + 1) `mod` 4
+
+  line1 <- renderNameTableLine nameTable1 y
+  line2 <- renderNameTableLine nameTable2 y
+
+  let line = line1 V.++ line2
+
+  forM_ [0 .. 255] (\i -> do
+    let index = fromIntegral $ line V.! (sx + i)
+    let color = palette V.! index
+    let addr = Ppu $ Screen (i, scanline)
+    store addr color
+    )
+
+renderNameTableLine :: Word16 -> Int -> IOEmulator (V.Vector Word8)
+renderNameTableLine nametable y = do
   let ty = y `div` 8
   let row = y `mod` 8
 
-  forM_ [0 .. tilesWide - 1] (\tx -> do
+  line <- concat <$> forM [0 .. tilesWide - 1] (\tx -> do
     tileRow <- getTileRow nametable (tx, ty) row
-    forM_ [0 .. 7] (\i -> do
-      -- offset within pixel, from start of tile
-      let x = tx * 8 + i
-      let tile = tileRow !! i
-      let color = palette !! fromIntegral tile
-      let addr = Ppu $ Screen (x, y)
-      store addr color
-      ))
+    pure $ map (tileRow V.!) [0..7]
+    )
+
+  pure $ V.fromList line
 
 step :: IOEmulator ()
 step = do
@@ -43,8 +67,8 @@ step = do
   cycles <- load (Ppu PpuCycles)
 
   -- Draw scanlines
-  when (scanline < 240 && cycles == 1) $
-    renderScanline
+  when (scanline < 240 && cycles == 1) $ do
+    renderScanline scanline
 
   -- Enter Vertical blank period
   when ((scanline == 241 && cycles == 1)) $ do
@@ -103,20 +127,21 @@ getTileAttribute nameTableAddr (x, y) = do
   let shift = fromIntegral $ ((sy * 2) + sx) * 2
   pure $ (attribute `shiftR` shift) .&. 3
 
-getTileRow :: Word16 -> (Int, Int) -> Int -> IOEmulator [Word8]
+getTileRow :: Word16 -> (Int, Int) -> Int -> IOEmulator (V.Vector Word8)
 getTileRow nameTableAddr coords row = do
   (pattern1, pattern2) <- getTileRowPatterns nameTableAddr coords row
   attribute <- getTileAttribute nameTableAddr coords
   let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]
   let row' = [ (x .&. 1, (y .&. 1) `shiftL` 1)  | (x, y) <- row]
   let indexes = reverse [toInt $ (attribute `shiftL` 2) .|. x .|. y | (x, y) <- row']
-  sequence $ [load $ Ppu $ PaletteData i | i <- indexes]
+  items <- sequence $ [load $ Ppu $ PaletteData i | i <- indexes]
+  pure $ V.fromList items
 
 tilesWide :: Int
 tilesWide = 32
 
-palette :: [(Word8, Word8, Word8)]
-palette =
+palette :: V.Vector (Word8, Word8, Word8)
+palette = V.fromList
   [ (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88),
     (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
     (0x5C, 0x00, 0x7E), (0x6E, 0x00, 0x40),
