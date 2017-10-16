@@ -140,11 +140,6 @@ getCycles opcode pageCrossed = if pageCrossed
   then pageCrossCycles opcode + cycles opcode
   else cycles opcode
 
-modify :: Address a -> (a -> a) -> IOEmulator ()
-modify addr f = do
-  av <- load addr
-  store addr (f av)
-
 handleInterrupts :: IOEmulator ()
 handleInterrupts = do
   interrupt <- load $ Cpu Interrupt

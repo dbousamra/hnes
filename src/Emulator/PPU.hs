@@ -18,6 +18,42 @@ reset = do
   store (Ppu Scanline) 240
   store (Ppu VerticalBlank) False
 
+step :: IOEmulator ()
+step = do
+  -- Update the counters, cycles etc
+  tick
+
+  scanline <- load (Ppu Scanline)
+  cycles <- load (Ppu PpuCycles)
+
+  -- Draw scanlines
+  when (scanline < 240 && cycles == 1) $ do
+    renderScanline scanline
+
+  -- Enter Vertical blank period
+  when ((scanline == 241 && cycles == 1)) $ do
+    store (Ppu VerticalBlank) True
+    generateNMI <- load (Ppu GenerateNMI)
+    when generateNMI $ store (Cpu Interrupt) (Just NMI)
+
+  -- Exit Vertical blank period
+  when ((scanline == 261 && cycles == 1)) $
+    store (Ppu VerticalBlank) False
+
+tick :: IOEmulator ()
+tick = do
+  modify (Ppu PpuCycles) (+1)
+  cycles <- load $ Ppu PpuCycles
+
+  when (cycles > 340) $ do
+    store (Ppu PpuCycles) 0
+    modify (Ppu Scanline) (+1)
+    scanline <- load (Ppu Scanline)
+
+    when (scanline > 261) $ do
+      store (Ppu Scanline) 0
+      modify (Ppu FrameCount) (+1)
+
 renderScanline :: Int -> IOEmulator ()
 renderScanline scanline = do
   sx <- fromIntegral <$> load (Ppu ScrollX)
@@ -58,47 +94,6 @@ renderNameTableLine nametable y = do
 
   pure $ V.fromList line
 
-step :: IOEmulator ()
-step = do
-  -- Update the counters, cycles etc
-  tick
-
-  scanline <- load (Ppu Scanline)
-  cycles <- load (Ppu PpuCycles)
-
-  -- Draw scanlines
-  when (scanline < 240 && cycles == 1) $ do
-    renderScanline scanline
-
-  -- Enter Vertical blank period
-  when ((scanline == 241 && cycles == 1)) $ do
-    store (Ppu VerticalBlank) True
-    generateNMI <- load (Ppu GenerateNMI)
-    when generateNMI $ store (Cpu Interrupt) (Just NMI)
-
-  -- Exit Vertical blank period
-  when ((scanline == 261 && cycles == 1)) $
-    store (Ppu VerticalBlank) False
-
-tick :: IOEmulator ()
-tick = do
-  modify (Ppu PpuCycles) (+1)
-  cycles <- load $ Ppu PpuCycles
-
-  when (cycles > 340) $ do
-    modify (Ppu PpuCycles) (const 0)
-    modify (Ppu Scanline) (+1)
-    scanline <- load (Ppu Scanline)
-
-    when (scanline > 261) $ do
-      modify (Ppu Scanline) (const 0)
-      modify (Ppu FrameCount) (+1)
-
-modify :: Address a -> (a -> a) -> IOEmulator ()
-modify addr f = do
-  av <- load addr
-  store addr (f av)
-
 getTileRowPatterns :: Word16 -> (Int, Int) -> Int -> IOEmulator (Word8, Word8)
 getTileRowPatterns nameTableAddr (x, y) row = do
   let index = (y * tilesWide) + x
@@ -133,7 +128,7 @@ getTileRow nameTableAddr coords row = do
   attribute <- getTileAttribute nameTableAddr coords
   let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]
   let row' = [ (x .&. 1, (y .&. 1) `shiftL` 1)  | (x, y) <- row]
-  let indexes = reverse [toInt $ (attribute `shiftL` 2) .|. x .|. y | (x, y) <- row']
+  let indexes = reverse $ [toInt $ (attribute `shiftL` 2) .|. x .|. y | (x, y) <- row']
   items <- sequence $ [load $ Ppu $ PaletteData i | i <- indexes]
   pure $ V.fromList items
 
