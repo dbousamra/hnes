@@ -126,9 +126,9 @@ getTileRow :: Word16 -> (Int, Int) -> Int -> IOEmulator (V.Vector Word8)
 getTileRow nameTableAddr coords row = do
   (pattern1, pattern2) <- getTileRowPatterns nameTableAddr coords row
   attribute <- getTileAttribute nameTableAddr coords
-  let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- [0..7]]
+  let row = [(pattern1 `shiftR` x, pattern2 `shiftR` x) | x <- reverse [0..7]]
   let row' = [ (x .&. 1, (y .&. 1) `shiftL` 1)  | (x, y) <- row]
-  let indexes = reverse $ [toInt $ (attribute `shiftL` 2) .|. x .|. y | (x, y) <- row']
+  let indexes = [toInt $ (attribute `shiftL` 2) .|. x .|. y | (x, y) <- row']
   items <- sequence $ [load $ Ppu $ PaletteData i | i <- indexes]
   pure $ V.fromList items
 
