@@ -137,6 +137,7 @@ data Ppu a where
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
   Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
+  Screen2 :: Int -> Ppu (Word8, Word8, Word8)
   ScreenBuffer :: Ppu (VUM.IOVector Word8)
 
 data Address a where
@@ -327,6 +328,11 @@ writePPU ppu addr v = case addr of
   Scanline      -> modifyIORef' (scanline ppu) (const v)
   FrameCount    -> modifyIORef' (frameCount ppu) (const v)
   VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
+  Screen2 offset -> do
+    let (r, g, b) = v
+    VUM.write (screen ppu) (offset + 0) r
+    VUM.write (screen ppu) (offset + 1) g
+    VUM.write (screen ppu) (offset + 2) b
   Screen coords -> do
     let (r, g, b) = v
     let offset = translateXY coords 256 * 3
