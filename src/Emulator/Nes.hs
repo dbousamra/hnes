@@ -128,6 +128,7 @@ data Ppu a where
   Scanline :: Ppu Int
   FrameCount :: Ppu Int
   NameTableAddr :: Ppu Word16
+  CurrentVRamAddr :: Ppu Word16
   BackgroundTableAddr :: Ppu BackgroundTableAddr
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
@@ -311,6 +312,7 @@ readPPU :: Nes -> Ppu a -> IO a
 readPPU nes addr = case addr of
   PpuCycles           -> readIORef $ ppuCycles $ ppu nes
   NameTableAddr       -> readIORef $ nameTable $ ppu nes
+  CurrentVRamAddr     -> readIORef $ currentVramAddress $ ppu nes
   Scanline            -> readIORef $ scanline $ ppu nes
   FrameCount          -> readIORef $ frameCount $ ppu nes
   VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
