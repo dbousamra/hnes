@@ -6,7 +6,6 @@ module Emulator.Nes (
   , Flag(..)
   , IncrementMode(..)
   , SpriteTableAddr(..)
-  , BackgroundTableAddr(..)
   , SpriteSize(..)
   , ColorMode(..)
   , Visibility(..)
@@ -36,8 +35,6 @@ import           System.Random
 data IncrementMode = Horizontal | Vertical
 
 data SpriteTableAddr = SpriteTable0000 | SpriteTable1000
-
-data BackgroundTableAddr = BackgroundTable0000 | BackgroundTable1000
 
 data SpriteSize = Normal | Double
 
@@ -87,7 +84,7 @@ data PPU = PPU {
   nameTable             :: IORef Word16,
   incrementMode         :: IORef IncrementMode,
   spriteTable           :: IORef SpriteTableAddr,
-  bgTable               :: IORef BackgroundTableAddr,
+  bgTable               :: IORef Word16,
   spriteSize            :: IORef SpriteSize,
   nmiEnabled            :: IORef Bool,
   -- Mask register bits
@@ -129,7 +126,7 @@ data Ppu a where
   FrameCount :: Ppu Int
   NameTableAddr :: Ppu Word16
   CurrentVRamAddr :: Ppu Word16
-  BackgroundTableAddr :: Ppu BackgroundTableAddr
+  BackgroundTableAddr :: Ppu Word16
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
   ScrollX :: Ppu Word16
@@ -266,7 +263,7 @@ newPPU = do
   nameTable <- newIORef 0x2000
   incrementMode <- newIORef Horizontal
   spriteTable <- newIORef SpriteTable0000
-  bgTable <- newIORef BackgroundTable0000
+  bgTable <- newIORef 0x0000
   spriteSize <- newIORef Normal
   nmiEnabled <- newIORef False
   -- Mask register
@@ -416,7 +413,7 @@ writeControl ppu v = do
     3 -> 0x2C00
   modifyIORef' (incrementMode ppu) $ const $ if testBit v 2 then Vertical else Horizontal
   modifyIORef' (spriteTable ppu) $ const $ if testBit v 3 then SpriteTable1000 else SpriteTable0000
-  modifyIORef' (bgTable ppu) $ const $ if testBit v 4 then BackgroundTable1000 else BackgroundTable0000
+  modifyIORef' (bgTable ppu) $ const $ if testBit v 4 then 0x1000 else 0x0000
   modifyIORef' (spriteSize ppu) $ const $ if testBit v 5 then Double else Normal
   modifyIORef' (nmiEnabled ppu) $ const $ testBit v 7
 
