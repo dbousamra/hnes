@@ -104,7 +104,13 @@ data PPU = PPU {
   -- Scroll register
   scrollXY              :: IORef Word16,
   -- Data register
-  dataV                 :: IORef Word8
+  dataV                 :: IORef Word8,
+  -- Temp vars
+  nameTableByte         :: IORef Word8,
+  attrTableByte         :: IORef Word8,
+  loTileByte            :: IORef Word8,
+  hiTileByte            :: IORef Word8,
+  tileData              :: IORef Word64
 }
 
 -- GADTs are used to represent addressing
@@ -131,11 +137,15 @@ data Ppu a where
   GenerateNMI :: Ppu Bool
   ScrollX :: Ppu Word16
   ScrollY :: Ppu Word16
+  NameTableByte :: Ppu Word8
+  AttrTableByte :: Ppu Word8
+  LoTileByte :: Ppu Word8
+  HiTileByte :: Ppu Word8
+  TileData :: Ppu Word64
   PaletteData :: Int -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
   Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
-  Screen2 :: Int -> Ppu (Word8, Word8, Word8)
   ScreenBuffer :: Ppu (VUM.IOVector Word8)
 
 data Address a where
@@ -284,6 +294,12 @@ newPPU = do
   scrollXY <- newIORef 0x0000
   -- Data register
   dataV <- newIORef 0x0
+  -- Temp vars
+  nameTableByte <- newIORef 0x0
+  attrTableByte <- newIORef 0x0
+  loTileByte <- newIORef 0x0
+  hiTileByte <- newIORef 0x0
+  tileData <- newIORef 0x0
 
   pure $ PPU
     -- Misc
@@ -303,6 +319,8 @@ newPPU = do
     scrollXY
     -- Data register
     dataV
+    -- Temp vars
+    nameTableByte attrTableByte loTileByte hiTileByte tileData
 
 
 readPPU :: Nes -> Ppu a -> IO a
@@ -317,6 +335,11 @@ readPPU nes addr = case addr of
   BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
   ScrollX             -> fmap (`shiftR` 8) (readIORef $ scrollXY $ ppu nes)
   ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
+  NameTableByte       -> readIORef $ nameTableByte $ ppu nes
+  AttrTableByte       -> readIORef $ attrTableByte $ ppu nes
+  LoTileByte          -> readIORef $ loTileByte $ ppu nes
+  HiTileByte          -> readIORef $ hiTileByte $ ppu nes
+  TileData            -> readIORef $ tileData $ ppu nes
   PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
   ScreenBuffer        -> pure $ screen $ ppu nes
   PpuMemory8 r        -> readPPUMemory nes r
@@ -327,11 +350,10 @@ writePPU ppu addr v = case addr of
   Scanline      -> modifyIORef' (scanline ppu) (const v)
   FrameCount    -> modifyIORef' (frameCount ppu) (const v)
   VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
-  Screen2 offset -> do
-    let (r, g, b) = v
-    VUM.write (screen ppu) (offset + 0) r
-    VUM.write (screen ppu) (offset + 1) g
-    VUM.write (screen ppu) (offset + 2) b
+  NameTableByte -> modifyIORef' (nameTableByte ppu) (const v)
+  AttrTableByte       -> modifyIORef' (attrTableByte ppu) (const v)
+  LoTileByte          -> modifyIORef' (loTileByte ppu) (const v)
+  HiTileByte          -> modifyIORef' (hiTileByte ppu) (const v)
   Screen coords -> do
     let (r, g, b) = v
     let offset = translateXY coords 256 * 3
