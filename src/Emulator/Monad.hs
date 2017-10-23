@@ -6,13 +6,15 @@ module Emulator.Monad (
   , load
   , store
   , modify
+  , trace
 ) where
 
-import           Control.Monad.Reader (ReaderT, ask, runReaderT)
-import           Control.Monad.Trans  (MonadIO, lift)
-import qualified Data.ByteString      as BS
-import qualified Emulator.Cartridge   as Cartridge
-import           Emulator.Nes         as Nes
+import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad.Reader   (ReaderT, ask, runReaderT)
+import           Control.Monad.Trans    (MonadIO, lift)
+import qualified Data.ByteString        as BS
+import qualified Emulator.Cartridge     as Cartridge
+import           Emulator.Nes           as Nes
 
 newtype IOEmulator a = IOEmulator { unNes :: ReaderT Nes IO a }
   deriving (Monad, Applicative, Functor, MonadIO)
@@ -31,6 +33,9 @@ modify :: Address a -> (a -> a) -> IOEmulator ()
 modify addr f = do
   av <- load addr
   store addr (f av)
+
+trace :: String -> IOEmulator ()
+trace = liftIO . putStrLn
 
 runIOEmulator :: BS.ByteString -> IOEmulator a ->  IO a
 runIOEmulator bs (IOEmulator reader) = do

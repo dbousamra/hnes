@@ -6,6 +6,7 @@ module Emulator.PPU (
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Bits              (shiftL, shiftR, (.&.), (.|.))
+import           Data.IORef
 import qualified Data.Vector            as V
 import           Data.Word
 import           Emulator.Monad
@@ -45,12 +46,10 @@ step = do
   let framePhase = getFramePhase scanline cycle
 
   case framePhase of
-    PreRender preRenderPhase -> handlePreRenderPhase preRenderPhase
-    Render RenderIdle        -> idle
-    Render RenderPreFetch    -> fetchData scanline cycle
-    Render RenderVisible     -> renderPixel scanline cycle
-    PostRender               -> idle
-    VBlank                   -> enterVBlank
+    PreRender phase -> handlePreRenderPhase phase
+    Render phase    -> handleRenderPhase phase scanline cycle
+    PostRender      -> idle
+    VBlank          -> enterVBlank
 
 tick :: IOEmulator (Int, Int)
 tick = do
@@ -95,7 +94,38 @@ getFramePhase scanline cycle
     ++ show cycle
 
 handlePreRenderPhase :: PreRenderPhase -> IOEmulator ()
-handlePreRenderPhase preRenderPhase = idle
+handlePreRenderPhase phase = idle
+
+handleRenderPhase :: RenderPhase -> Int -> Int -> IOEmulator ()
+handleRenderPhase phase scanline cycle = case phase of
+  RenderVisible -> renderPixel scanline cycle
+  other         -> idle
+
+renderPixel :: Int -> Int -> IOEmulator ()
+renderPixel scanline cycle = do
+  scrollX <- load $ Ppu ScrollX
+  scrollY <- load $ Ppu ScrollY
+
+  let x = cycle - 1
+  let y' = scanline + fromIntegral scrollY
+
+  -- let y' = if y >= 240 then y - 240 else y
+
+
+
+  ntAddr <- nametableAddr (x `div` 8, y' `div` 8)
+
+  -- trace (show ntAddr)
+
+  tile <- loadTile ntAddr
+  patternPixel <- getPatternPixel (fromIntegral tile) (x `mod` 8, y' `mod` 8)
+
+  paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral patternPixel)
+  let paletteIndex' = paletteIndex .&. 0x3f
+  let paletteColor = getColor paletteIndex'
+
+  store (Ppu $ Screen (x, y')) paletteColor
+
 
 idle :: IOEmulator ()
 idle = pure ()
@@ -109,50 +139,76 @@ enterVBlank = do
 exitVBlank :: IOEmulator ()
 exitVBlank = store (Ppu VerticalBlank) False
 
-renderPixel :: Int -> Int -> IOEmulator ()
-renderPixel scanline cycle = pure ()
+data NameTableAddress = NameTableAddress {
+  xIndex :: Word8,
+  yIndex :: Word8,
+  base   :: Word16
+} deriving (Show, Eq)
 
-fetchData :: Int -> Int -> IOEmulator ()
-fetchData scanline cycle = case cycle `mod` 8 of
-  1     -> fetchNameTableValue >>= store (Ppu NameTableByte)
-  3     -> fetchAttrTableValue >>= store (Ppu AttrTableByte)
-  5     -> fetchLoTileValue    >>= store (Ppu LoTileByte)
-  7     -> fetchHiTileValue    >>= store (Ppu HiTileByte)
-  0     -> storeTileData
-  other -> idle
+nametableAddr :: (Int, Int) -> IOEmulator NameTableAddress
+nametableAddr (x, y) = do
+  base <- load $ Ppu NameTableAddr
+  pure $ NameTableAddress (fromIntegral $ xIndex `mod` 32) (fromIntegral $ yIndex `mod` 30) base
+  where
+    xIndex = x `mod` 64
+    yIndex = y `mod` 60
+    -- base = case (xIndex >= 32, yIndex >= 30) of
+    --   (False, False) -> 0x2000
+    --   (True, False)  -> 0x2400
+    --   (False, True)  -> 0x2800
+    --   (True, True)   -> 0x2c00
 
 
-fetchNameTableValue :: IOEmulator Word8
-fetchNameTableValue = do
-  v <- load $ Ppu CurrentVRamAddr
-  let addr = PpuMemory8 (0x2000 .|. (v .&. 0x0FFF))
-  load $ Ppu addr
+loadTile :: NameTableAddress -> IOEmulator Word8
+loadTile (NameTableAddress x y base) = load (Ppu $ PpuMemory8 addr)
+  where addr = base + 32 * fromIntegral y + fromIntegral x
 
-fetchAttrTableValue :: IOEmulator Word8
-fetchAttrTableValue = do
-  v <- load $ Ppu CurrentVRamAddr
-  let addr = PpuMemory8 $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `shiftR` 4) .&. 0x38) .|. ((v `shiftR` 2) .&. 0x07)
-  v' <- load $ Ppu addr
-  let shift = fromIntegral $ ((v `shiftR` 4) .&. 4) .|. (v .&. 2)
-  pure $ ((v' `shiftR` shift) .&. 3) `shiftL` 2
+getPatternPixel :: Word16 -> (Int, Int) -> IOEmulator Word8
+getPatternPixel tile (x, y) = do
+  bgTableAddr <- load $ Ppu BackgroundTableAddr
+  let offset = (tile `shiftL` 4) + fromIntegral y + bgTableAddr
 
-fetchLoTileValue :: IOEmulator Word8
-fetchLoTileValue = do
-  v <- load $ Ppu CurrentVRamAddr
-  bt <- load $ Ppu BackgroundTableAddr
-  nametableV <- load $ Ppu NameTableByte
-  let fineY = (v `shiftR` 12) .&. 7
-  let addr = PpuMemory8 $ (0x1000 * bt) + (fromIntegral nametableV) * 16 + fineY
-  load $ Ppu addr
+  pattern0 <- load $ Ppu $ PpuMemory8 offset
+  pattern1 <- load $ Ppu $ PpuMemory8 $ offset + 8
+  let bit0 = (pattern0 `shiftR` (7 - (fromIntegral x `mod` 8))) .&. 1
+  let bit1 = (pattern1 `shiftR` (7 - (fromIntegral x `mod` 8))) .&. 1
 
-fetchHiTileValue :: IOEmulator Word8
-fetchHiTileValue = do
-  v <- load $ Ppu CurrentVRamAddr
-  bt <- load $ Ppu BackgroundTableAddr
-  nametableV <- load $ Ppu NameTableByte
-  let fineY = (v `shiftR` 12) .&. 7
-  let addr = PpuMemory8 $ (0x1000 * bt) + (fromIntegral nametableV) * 16 + fineY + 8
-  load $ Ppu addr
+  pure $ (bit1 `shiftL` 1) .|. bit0
 
-storeTileData :: IOEmulator ()
-storeTileData = idle
+getColor :: Word8 -> (Word8, Word8, Word8)
+getColor paletteIndex = palette V.! (fromIntegral paletteIndex)
+
+palette :: V.Vector (Word8, Word8, Word8)
+palette = V.fromList
+  [ (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88),
+    (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
+    (0x5C, 0x00, 0x7E), (0x6E, 0x00, 0x40),
+    (0x6C, 0x06, 0x00), (0x56, 0x1D, 0x00),
+    (0x33, 0x35, 0x00), (0x0B, 0x48, 0x00),
+    (0x00, 0x52, 0x00), (0x00, 0x4F, 0x08),
+    (0x00, 0x40, 0x4D), (0x00, 0x00, 0x00),
+    (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),
+    (0xAD, 0xAD, 0xAD), (0x15, 0x5F, 0xD9),
+    (0x42, 0x40, 0xFF), (0x75, 0x27, 0xFE),
+    (0xA0, 0x1A, 0xCC), (0xB7, 0x1E, 0x7B),
+    (0xB5, 0x31, 0x20), (0x99, 0x4E, 0x00),
+    (0x6B, 0x6D, 0x00), (0x38, 0x87, 0x00),
+    (0x0C, 0x93, 0x00), (0x00, 0x8F, 0x32),
+    (0x00, 0x7C, 0x8D), (0x00, 0x00, 0x00),
+    (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),
+    (0xFF, 0xFE, 0xFF), (0x64, 0xB0, 0xFF),
+    (0x92, 0x90, 0xFF), (0xC6, 0x76, 0xFF),
+    (0xF3, 0x6A, 0xFF), (0xFE, 0x6E, 0xCC),
+    (0xFE, 0x81, 0x70), (0xEA, 0x9E, 0x22),
+    (0xBC, 0xBE, 0x00), (0x88, 0xD8, 0x00),
+    (0x5C, 0xE4, 0x30), (0x45, 0xE0, 0x82),
+    (0x48, 0xCD, 0xDE), (0x4F, 0x4F, 0x4F),
+    (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),
+    (0xFF, 0xFE, 0xFF), (0xC0, 0xDF, 0xFF),
+    (0xD3, 0xD2, 0xFF), (0xE8, 0xC8, 0xFF),
+    (0xFB, 0xC2, 0xFF), (0xFE, 0xC4, 0xEA),
+    (0xFE, 0xCC, 0xC5), (0xF7, 0xD8, 0xA5),
+    (0xE4, 0xE5, 0x94), (0xCF, 0xEF, 0x96),
+    (0xBD, 0xF4, 0xAB), (0xB3, 0xF3, 0xCC),
+    (0xB5, 0xEB, 0xF2), (0xB8, 0xB8, 0xB8),
+    (0x00, 0x00, 0x00), (0x00, 0x00, 0x00) ]

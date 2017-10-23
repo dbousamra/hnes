@@ -135,7 +135,7 @@ data Ppu a where
   BackgroundTableAddr :: Ppu Word16
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
-  ScrollX :: Ppu Word16
+  ScrollX :: Ppu Word8
   ScrollY :: Ppu Word16
   NameTableByte :: Ppu Word8
   AttrTableByte :: Ppu Word8
@@ -333,7 +333,7 @@ readPPU nes addr = case addr of
   VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
   GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
-  ScrollX             -> fmap (`shiftR` 8) (readIORef $ scrollXY $ ppu nes)
+  ScrollX             -> fmap (fromIntegral . (`shiftR` 8)) (readIORef $ scrollXY $ ppu nes)
   ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
   NameTableByte       -> readIORef $ nameTableByte $ ppu nes
   AttrTableByte       -> readIORef $ attrTableByte $ ppu nes
@@ -351,9 +351,10 @@ writePPU ppu addr v = case addr of
   FrameCount    -> modifyIORef' (frameCount ppu) (const v)
   VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
   NameTableByte -> modifyIORef' (nameTableByte ppu) (const v)
-  AttrTableByte       -> modifyIORef' (attrTableByte ppu) (const v)
-  LoTileByte          -> modifyIORef' (loTileByte ppu) (const v)
-  HiTileByte          -> modifyIORef' (hiTileByte ppu) (const v)
+  AttrTableByte -> modifyIORef' (attrTableByte ppu) (const v)
+  LoTileByte    -> modifyIORef' (loTileByte ppu) (const v)
+  HiTileByte    -> modifyIORef' (hiTileByte ppu) (const v)
+  TileData      -> modifyIORef' (tileData ppu) (const v)
   Screen coords -> do
     let (r, g, b) = v
     let offset = translateXY coords 256 * 3

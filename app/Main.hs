@@ -18,6 +18,7 @@ import           System.Environment     (getArgs)
 main :: IO ()
 main = do
   filename <- getArgs
+  cart' <- BS.readFile $ head filename
   -- Set up SDL
   SDL.initializeAll
   -- Create Window
@@ -30,7 +31,6 @@ main = do
   }
   renderer <- SDL.createRenderer window (-1) rendererConfig
   -- Create NES
-  cart' <- BS.readFile $ head filename
   runIOEmulator cart' $ do
     reset
     appLoop 0 0 renderer window
