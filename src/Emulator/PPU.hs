@@ -26,11 +26,16 @@ data RenderPhase
   | RenderIdle
   deriving (Eq, Show)
 
+data VBlankPhase
+  = VBlankEnter
+  | VBLankIdle
+  deriving (Eq, Show)
+
 data FramePhase
   = PreRender PreRenderPhase
   | Render RenderPhase
   | PostRender
-  | VBlank
+  | VBlank VBlankPhase
   deriving (Eq, Show)
 
 reset :: IOEmulator ()
@@ -49,7 +54,7 @@ step = do
     PreRender phase -> handlePreRenderPhase phase
     Render phase    -> handleRenderPhase phase scanline cycle
     PostRender      -> idle
-    VBlank          -> enterVBlank
+    VBlank phase    -> handleVBlankPhase phase
 
 tick :: IOEmulator (Int, Int)
 tick = do
@@ -83,11 +88,16 @@ getPreRenderPhase cycle
   | cycle >= 280 && cycle <= 304 = PreRenderReloadY
   | otherwise = PreRenderIdle
 
+getVBlankPhase :: Int -> VBlankPhase
+getVBlankPhase cycle
+  | cycle == 1 = VBlankEnter
+  | otherwise = VBLankIdle
+
 getFramePhase :: Int -> Int -> FramePhase
 getFramePhase scanline cycle
   | scanline >= 0 && scanline <= 239 = Render $ getRenderPhase cycle
   | scanline == 240 = PostRender
-  | scanline >= 241 && scanline <= 260 = VBlank
+  | scanline >= 241 && scanline <= 260 = VBlank $ getVBlankPhase cycle
   | scanline == 261 = PreRender $ getPreRenderPhase cycle
   | otherwise = error $ "Erronenous frame phase detected at scanline "
     ++ show scanline ++ " and cycle "
@@ -100,6 +110,11 @@ handleRenderPhase :: RenderPhase -> Int -> Int -> IOEmulator ()
 handleRenderPhase phase scanline cycle = case phase of
   RenderVisible -> renderPixel scanline cycle
   other         -> idle
+
+handleVBlankPhase :: VBlankPhase -> IOEmulator ()
+handleVBlankPhase phase = case phase of
+  VBlankEnter -> enterVBlank
+  VBLankIdle  -> idle
 
 renderPixel :: Int -> Int -> IOEmulator ()
 renderPixel scanline cycle = do
