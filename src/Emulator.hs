@@ -17,7 +17,7 @@ import           Prelude                hiding (and, compare)
 step :: IOEmulator ()
 step = do
   cycles' <- CPU.step
-  replicateM_ (cycles' * 10) PPU.step
+  replicateM_ (cycles' * 3) PPU.step
 
 stepFrame :: IOEmulator ()
 stepFrame = do

@@ -32,6 +32,12 @@ data FramePhase
   | VBlank VBlankPhase
   deriving (Eq, Show)
 
+data Sprite = Sprite {
+  coords        :: Coords,
+  tileIndexByte :: Word8,
+  attributeByte :: Word8
+} deriving (Show, Eq)
+
 data NameTableAddress = NameTableAddress Word8 Word8 Word16 deriving (Show, Eq)
 
 reset :: IOEmulator ()
@@ -44,14 +50,12 @@ step :: IOEmulator ()
 step = do
   (scanline, cycle) <- tick
 
-  let framePhase = getFramePhase scanline cycle
-
-  case framePhase of
+  case getFramePhase scanline cycle of
     Render phase -> handleRenderPhase phase scanline cycle
     VBlank phase -> handleVBlankPhase phase
     PostRender   -> idle
 
-tick :: IOEmulator (Int, Int)
+tick :: IOEmulator Coords
 tick = do
   modify (Ppu PpuCycles) (+1)
   cycles <- load $ Ppu PpuCycles
@@ -70,12 +74,12 @@ tick = do
 
   pure (scanline, cycles)
 
-getRenderPhase :: Int -> RenderPhase
-getRenderPhase cycle
-  | cycle == 0 = RenderIdle
-  | cycle >= 1 && cycle <= 256 = RenderVisible
-  | cycle >= 321 && cycle <= 336 = RenderPreFetch
-  | otherwise = RenderIdle
+getRenderPhase :: RenderPhase
+getRenderPhase = RenderVisible
+  -- | cycle == 0 = RenderIdle
+  -- | cycle >= 1 && cycle <= 256 = RenderVisible
+  -- | cycle >= 321 && cycle <= 336 = RenderPreFetch
+  -- | otherwise = RenderIdle
 
 getVBlankPhase :: Int -> Int -> VBlankPhase
 getVBlankPhase scanline cycle
@@ -85,7 +89,7 @@ getVBlankPhase scanline cycle
 
 getFramePhase :: Int -> Int -> FramePhase
 getFramePhase scanline cycle
-  | scanline >= 0 && scanline <= 239 = Render $ getRenderPhase cycle
+  | scanline >= 0 && scanline <= 239 = Render $ getRenderPhase
   | scanline == 240 = PostRender
   | scanline >= 241 && scanline <= 261 = VBlank $ getVBlankPhase scanline cycle
   | otherwise = error $ "Erronenous frame phase detected at scanline "
@@ -94,7 +98,7 @@ getFramePhase scanline cycle
 
 handleRenderPhase :: RenderPhase -> Int -> Int -> IOEmulator ()
 handleRenderPhase phase scanline cycle = case phase of
-  RenderVisible -> renderPixel scanline cycle
+  RenderVisible -> renderScanline scanline
   other         -> idle
 
 handleVBlankPhase :: VBlankPhase -> IOEmulator ()
@@ -103,26 +107,85 @@ handleVBlankPhase phase = case phase of
   VBLankIdle  -> idle
   VBlankExit  -> exitVBlank
 
-renderPixel :: Int -> Int -> IOEmulator ()
-renderPixel scanline cycle = do
+renderScanline :: Int -> IOEmulator ()
+renderScanline scanline = do
+  forM_ [1..256] (renderBackgroundPixel scanline)
+
+renderBackgroundPixel :: Int -> Int -> IOEmulator ()
+renderBackgroundPixel scanline cycle = do
+  coords <- getScrollingCoords scanline cycle
+  -- trace (show coords)
+  nametableAddr <- getNametableAddr coords
+  tile <- getTile nametableAddr
+  patternColor <- getPatternColor tile coords
+  attributeColor <- getAttributeColor nametableAddr
+  let tileColor = fromIntegral $ (attributeColor `shiftL` 2) .|. patternColor
+  let tileColor = fromIntegral patternColor
+  paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + tileColor)
+  store (Ppu $ Screen coords) (getPaletteColor paletteIndex)
+  -- store (Ppu $ Screen coords) (255, 0, 0)
+
+getNametableAddr :: Coords -> IOEmulator NameTableAddress
+getNametableAddr (x, y) = do
+  base <- load $ Ppu NameTableAddr
+  let x' = fromIntegral $ x `div` 8 `mod` 64 `mod` 32 -- not sure
+  let y' = fromIntegral $ y `div` 8 `mod` 60 `mod` 30
+  pure $ NameTableAddress x' y' base
+
+getTile :: NameTableAddress -> IOEmulator Word8
+getTile (NameTableAddress x y base) = load (Ppu $ PpuMemory8 addr)
+  where addr = base + 32 * fromIntegral y + fromIntegral x
+
+getPatternColor :: Word8 -> Coords -> IOEmulator Word8
+getPatternColor tile (x, y) = do
+  let (x', y') = (x `mod` 8, y `mod` 8)
+
+  bgTableAddr <- load $ Ppu BackgroundTableAddr
+  let offset = (fromIntegral tile `shiftL` 4) + fromIntegral y' + bgTableAddr
+
+  pattern0 <- load $ Ppu $ PpuMemory8 offset
+  pattern1 <- load $ Ppu $ PpuMemory8 $ offset + 8
+  let bit0 = (pattern0 `shiftR` (7 - (fromIntegral x' `mod` 8))) .&. 1
+  let bit1 = (pattern1 `shiftR` (7 - (fromIntegral x' `mod` 8))) .&. 1
+
+  pure $ (bit1 `shiftL` 1) .|. bit0
+
+getAttributeColor :: NameTableAddress -> IOEmulator Word8
+getAttributeColor (NameTableAddress x y base) = do
+  let group = fromIntegral $ (y `div` 4 * 8) + (x `div` 4)
+  attr <- load $ Ppu $ PpuMemory8 (base + 0x3C0 + group)
+  let (left, top) = (x `mod` 4 < 2, y `mod` 4 < 2)
+  pure $ case (left, top) of
+    (True, True)   -> attr .&. 3
+    (False, True)  -> (attr `shiftR` 2) .&. 0x3
+    (True, False)  -> (attr `shiftR` 4) .&. 0x3
+    (False, False) -> (attr `shiftR` 6) .&. 0x3
+
+getPaletteColor :: Word8 -> (Word8, Word8, Word8)
+getPaletteColor index = palette V.! (fromIntegral index)
+
+getScrollingCoords :: Int -> Int -> IOEmulator Coords
+getScrollingCoords scanline cycle = do
   scrollX <- load $ Ppu ScrollX
   scrollY <- load $ Ppu ScrollY
-
   let x = cycle - 1 + fromIntegral scrollX
   let y = scanline + fromIntegral scrollY
   let x' = if x >= 256 then x - 256 else x
   let y' = if y >= 240 then y - 240 else y
+  pure (x', y')
 
-  ntAddr <- nametableAddr (x' `div` 8, y' `div` 8)
-  tile <- loadTile ntAddr
-  patternPixel <- getPatternPixel (fromIntegral tile) (x' `mod` 8, y' `mod` 8)
-  paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral patternPixel) -- let paletteIndex' = paletteIndex .&. 0x3f
-  let paletteColor = getColor paletteIndex
+getSpriteAt :: Int -> IOEmulator Sprite
+getSpriteAt index = do
+  -- let baseOffset = fromIntegral $ index * 4
+  -- y <- load (Ppu $ OamData $ baseOffset)
+  -- tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
+  -- attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
+  -- x <- load (Ppu $ OamData $ baseOffset + 3)
+  -- pure $ Sprite (fromIntegral x, fromIntegral $ y + 1) tileIndexByte attributeByte
+  pure $ Sprite (1, 2) 3 4
 
-  store (Ppu $ Screen (x', y')) paletteColor
-
-idle :: IOEmulator ()
-idle = pure ()
+getSprites :: IOEmulator (V.Vector Sprite)
+getSprites = traverse getSpriteAt (V.fromList [0..64])
 
 enterVBlank :: IOEmulator ()
 enterVBlank = do
@@ -133,32 +196,8 @@ enterVBlank = do
 exitVBlank :: IOEmulator ()
 exitVBlank = store (Ppu VerticalBlank) False
 
-nametableAddr :: (Int, Int) -> IOEmulator NameTableAddress
-nametableAddr (x, y) = do
-  base <- load $ Ppu NameTableAddr
-  let x' = fromIntegral $ x `mod` 64 `mod` 32
-  let y' = fromIntegral $ y `mod` 60 `mod` 30
-  pure $ NameTableAddress x' y' base
-
-
-loadTile :: NameTableAddress -> IOEmulator Word8
-loadTile (NameTableAddress x y base) = load (Ppu $ PpuMemory8 addr)
-  where addr = base + 32 * fromIntegral y + fromIntegral x
-
-getPatternPixel :: Word16 -> (Int, Int) -> IOEmulator Word8
-getPatternPixel tile (x, y) = do
-  bgTableAddr <- load $ Ppu BackgroundTableAddr
-  let offset = (tile `shiftL` 4) + fromIntegral y + bgTableAddr
-
-  pattern0 <- load $ Ppu $ PpuMemory8 offset
-  pattern1 <- load $ Ppu $ PpuMemory8 $ offset + 8
-  let bit0 = (pattern0 `shiftR` (7 - (fromIntegral x `mod` 8))) .&. 1
-  let bit1 = (pattern1 `shiftR` (7 - (fromIntegral x `mod` 8))) .&. 1
-
-  pure $ (bit1 `shiftL` 1) .|. bit0
-
-getColor :: Word8 -> (Word8, Word8, Word8)
-getColor paletteIndex = palette V.! (fromIntegral paletteIndex)
+idle :: IOEmulator ()
+idle = pure ()
 
 palette :: V.Vector (Word8, Word8, Word8)
 palette = V.fromList

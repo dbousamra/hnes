@@ -24,7 +24,6 @@ data INesFileHeader = INesFileHeader {
 } deriving (Eq, Show)
 
 data Cartridge = Cartridge {
-  header   :: INesFileHeader,
   chrRom   :: VUM.MVector RealWorld Word8,
   prgRom   :: VUM.MVector RealWorld Word8,
   sRam     :: VUM.MVector RealWorld Word8,
@@ -46,8 +45,8 @@ parseHeader bs = INesFileHeader
 
 parse :: BS.ByteString -> IO Cartridge
 parse bs = do
-  let header @ (INesFileHeader _ numPrg numChr _ _ _) = parseHeader bs
-  let prgOffset  = numPrg * prgRomSize
+  let (INesFileHeader _ numPrg numChr _ _ _) = parseHeader bs
+  let prgOffset = numPrg * prgRomSize
   let prgRom = sliceBS headerSize (headerSize + prgOffset) bs
   let chrOffset = numChr * chrRomSize
   let chrRom = if numChr == 0 then (BS.replicate chrRomSize 0)
@@ -64,10 +63,10 @@ parse bs = do
   let chrBanks = VUM.length chr `div` 0x2000
   chrBank1 <- newIORef 0
 
-  pure $ Cartridge header chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1
+  pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1
 
 read :: Cartridge -> Word16 -> IO Word8
-read (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
+read (Cartridge chr prg _ _ _ prgBank1 prgBank2 _) addr
   | addr' <  0x2000 = VUM.unsafeRead chr addr'
   | addr' >= 0xC000 = do
     prgBank2V <- readIORef prgBank2
@@ -80,7 +79,7 @@ read (Cartridge _ chr prg _ _ _ prgBank1 prgBank2 _) addr
   where addr' = fromIntegral addr
 
 write :: Cartridge -> Word16 -> Word8 -> IO ()
-write (Cartridge _ chr _ sram _ _ prgBank1 _ _) addr v
+write (Cartridge chr _ sram _ _ prgBank1 _ _) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chr addr' v
   | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v)
   | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v

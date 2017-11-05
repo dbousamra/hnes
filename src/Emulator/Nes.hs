@@ -3,6 +3,7 @@
 
 module Emulator.Nes (
     Nes(..)
+  , Coords
   , Flag(..)
   , IncrementMode(..)
   , SpriteTableAddr(..)
@@ -31,6 +32,8 @@ import qualified Emulator.Controller          as Controller
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
 import           System.Random
+
+type Coords = (Int, Int)
 
 data IncrementMode = Horizontal | Vertical
 
@@ -143,9 +146,10 @@ data Ppu a where
   HiTileByte :: Ppu Word8
   TileData :: Ppu Word64
   PaletteData :: Int -> Ppu Word8
+  OamData :: Word16 -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
-  Screen :: (Int, Int) -> Ppu (Word8, Word8, Word8)
+  Screen :: Coords -> Ppu (Word8, Word8, Word8)
   ScreenBuffer :: Ppu (VUM.IOVector Word8)
 
 data Address a where
@@ -340,6 +344,7 @@ readPPU nes addr = case addr of
   LoTileByte          -> readIORef $ loTileByte $ ppu nes
   HiTileByte          -> readIORef $ hiTileByte $ ppu nes
   TileData            -> readIORef $ tileData $ ppu nes
+  OamData addr        -> readOAMData' (ppu nes) addr
   PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
   ScreenBuffer        -> pure $ screen $ ppu nes
   PpuMemory8 r        -> readPPUMemory nes r
@@ -357,7 +362,7 @@ writePPU ppu addr v = case addr of
   TileData      -> modifyIORef' (tileData ppu) (const v)
   Screen coords -> do
     let (r, g, b) = v
-    let offset = translateXY coords 256 * 3
+    let offset = fromIntegral $ translateXY coords 256 * 3
     VUM.write (screen ppu) (offset + 0) r
     VUM.write (screen ppu) (offset + 1) g
     VUM.write (screen ppu) (offset + 2) b
@@ -381,7 +386,7 @@ writePPUMemory nes addr v
 readPPURegister :: Nes -> Word16 -> IO Word8
 readPPURegister nes addr = case 0x2000 + addr `mod` 8 of
   0x2002 -> readStatus (ppu nes)
-  0x2004 -> readOAM (ppu nes)
+  0x2004 -> readOAMData (ppu nes)
   0x2007 -> readData nes
   other  -> error $ "Unimplemented read at " ++ show other
 
@@ -392,8 +397,13 @@ readStatus ppu = do
   modifyIORef' (verticalBlank ppu) (const False)
   pure $ fromIntegral r
 
-readOAM :: PPU -> IO Word8
-readOAM ppu = error "Unimplemented PPU readOAM"
+readOAMData :: PPU -> IO Word8
+readOAMData ppu = do
+  addr <- readIORef $ oamAddress ppu
+  VUM.unsafeRead (oamData ppu) (fromIntegral $ addr)
+
+readOAMData' :: PPU -> Word16 -> IO Word8
+readOAMData' ppu addr = VUM.unsafeRead (oamData ppu) (fromIntegral $ addr)
 
 readData :: Nes -> IO Word8
 readData nes = do
@@ -455,7 +465,10 @@ writeOAMAddress :: PPU -> Word8 -> IO ()
 writeOAMAddress ppu v = modifyIORef' (oamAddress ppu) (const v)
 
 writeOAMData :: PPU -> Word8 -> IO ()
-writeOAMData ppu v = error $ "Unimplemented writeOAMData at " ++ prettifyWord8 v
+writeOAMData ppu v = do
+  addr <- readIORef $ oamAddress ppu
+  VUM.unsafeWrite (oamData ppu) (toInt addr) v
+  modifyIORef' (oamAddress ppu) (+ 1)
 
 writeScroll :: PPU -> Word8 -> IO ()
 writeScroll ppu v = do
@@ -497,5 +510,5 @@ writeData nes v = do
 writeKeys :: Nes -> [Controller.Key] -> IO ()
 writeKeys = Controller.setKeysDown . controller
 
-translateXY :: (Int, Int) -> Int -> Int
+translateXY :: Coords -> Int -> Int
 translateXY (x, y) width = x + (y * width)
