@@ -21,8 +21,7 @@ module Emulator.Nes (
 
 import           Control.Monad
 import           Control.Monad.ST
-import           Data.Bits                    (shiftL, shiftR, testBit, (.&.),
-                                               (.|.))
+import           Data.Bits                    (shiftL, shiftR, testBit, (.&.), (.|.))
 import           Data.IORef
 import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU

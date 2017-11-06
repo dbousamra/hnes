@@ -14,22 +14,12 @@ import           Emulator.Nes
 import           Emulator.Util
 import           Prelude                hiding (cycle)
 
-data RenderPhase
-  = RenderVisible
-  | RenderPreFetch
-  | RenderIdle
-  deriving (Eq, Show)
-
-data VBlankPhase
-  = VBlankEnter
-  | VBLankIdle
-  | VBlankExit
-  deriving (Eq, Show)
-
 data FramePhase
-  = Render RenderPhase
+  = ScanlineRender Int
   | PostRender
-  | VBlank VBlankPhase
+  | VBlankEnter
+  | VBlankIdle
+  | VBlankExit
   deriving (Eq, Show)
 
 data Sprite = Sprite {
@@ -49,11 +39,8 @@ reset = do
 step :: IOEmulator ()
 step = do
   (scanline, cycle) <- tick
-
-  case getFramePhase scanline cycle of
-    Render phase -> handleRenderPhase phase scanline cycle
-    VBlank phase -> handleVBlankPhase phase
-    PostRender   -> idle
+  let phase = getFramePhase scanline cycle
+  handleFramePhase phase
 
 tick :: IOEmulator Coords
 tick = do
@@ -70,60 +57,39 @@ tick = do
       modify (Ppu FrameCount) (+1)
 
   scanline <- load $ Ppu Scanline
-  cycles <- load $ Ppu PpuCycles
-
+  cycle <- load $ Ppu PpuCycles
   pure (scanline, cycles)
-
-getRenderPhase :: RenderPhase
-getRenderPhase = RenderVisible
-  -- | cycle == 0 = RenderIdle
-  -- | cycle >= 1 && cycle <= 256 = RenderVisible
-  -- | cycle >= 321 && cycle <= 336 = RenderPreFetch
-  -- | otherwise = RenderIdle
-
-getVBlankPhase :: Int -> Int -> VBlankPhase
-getVBlankPhase scanline cycle
-  | scanline == 241 && cycle == 1 = VBlankEnter
-  | scanline == 261 && cycle == 1 = VBlankExit
-  | otherwise = VBLankIdle
 
 getFramePhase :: Int -> Int -> FramePhase
 getFramePhase scanline cycle
-  | scanline >= 0 && scanline <= 239 = Render $ getRenderPhase
+  | scanline >= 0 && scanline <= 239 && cycle == 1 = ScanlineRender scanline
   | scanline == 240 = PostRender
-  | scanline >= 241 && scanline <= 261 = VBlank $ getVBlankPhase scanline cycle
-  | otherwise = error $ "Erronenous frame phase detected at scanline "
-    ++ show scanline ++ " and cycle "
-    ++ show cycle
+  | scanline == 241 && cycle == 1 = VBlankEnter
+  | scanline >= 242 && scanline <= 260 = VBlankIdle
+  | scanline == 261 && cycle == 1 = VBlankExit
+  | otherwise = PostRender
 
-handleRenderPhase :: RenderPhase -> Int -> Int -> IOEmulator ()
-handleRenderPhase phase scanline cycle = case phase of
-  RenderVisible -> renderScanline scanline
-  other         -> idle
-
-handleVBlankPhase :: VBlankPhase -> IOEmulator ()
-handleVBlankPhase phase = case phase of
-  VBlankEnter -> enterVBlank
-  VBLankIdle  -> idle
-  VBlankExit  -> exitVBlank
+handleFramePhase :: FramePhase -> IOEmulator ()
+handleFramePhase phase = case phase of
+  ScanlineRender scanline -> renderScanline scanline
+  PostRender              -> idle
+  VBlankEnter             -> enterVBlank
+  VBlankIdle              -> idle
+  VBlankExit              -> exitVBlank
 
 renderScanline :: Int -> IOEmulator ()
-renderScanline scanline = do
-  forM_ [1..256] (renderBackgroundPixel scanline)
+renderScanline scanline = forM_ [1..256] (renderBackgroundPixel scanline)
 
 renderBackgroundPixel :: Int -> Int -> IOEmulator ()
 renderBackgroundPixel scanline cycle = do
   coords <- getScrollingCoords scanline cycle
-  -- trace (show coords)
   nametableAddr <- getNametableAddr coords
   tile <- getTile nametableAddr
   patternColor <- getPatternColor tile coords
   attributeColor <- getAttributeColor nametableAddr
   let tileColor = fromIntegral $ (attributeColor `shiftL` 2) .|. patternColor
-  let tileColor = fromIntegral patternColor
   paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + tileColor)
   store (Ppu $ Screen coords) (getPaletteColor paletteIndex)
-  -- store (Ppu $ Screen coords) (255, 0, 0)
 
 getNametableAddr :: Coords -> IOEmulator NameTableAddress
 getNametableAddr (x, y) = do
