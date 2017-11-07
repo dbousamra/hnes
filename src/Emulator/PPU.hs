@@ -16,6 +16,7 @@ import           Prelude                hiding (cycle)
 
 data FramePhase
   = ScanlineRender Int
+  | ScanlineIdle
   | PostRender
   | VBlankEnter
   | VBlankIdle
@@ -67,18 +68,21 @@ getFramePhase scanline cycle
   | scanline == 241 && cycle == 1 = VBlankEnter
   | scanline >= 242 && scanline <= 260 = VBlankIdle
   | scanline == 261 && cycle == 1 = VBlankExit
-  | otherwise = PostRender
+  | otherwise = ScanlineIdle
 
 handleFramePhase :: FramePhase -> IOEmulator ()
 handleFramePhase phase = case phase of
   ScanlineRender scanline -> renderScanline scanline
+  ScanlineIdle            -> idle
   PostRender              -> idle
   VBlankEnter             -> enterVBlank
   VBlankIdle              -> idle
   VBlankExit              -> exitVBlank
 
 renderScanline :: Int -> IOEmulator ()
-renderScanline scanline = forM_ [1..256] (renderBackgroundPixel scanline)
+renderScanline scanline = do
+  sprites <- getSprites
+  forM_ [1..256] (renderBackgroundPixel scanline)
 
 renderBackgroundPixel :: Int -> Int -> IOEmulator ()
 renderBackgroundPixel scanline cycle = do
@@ -142,13 +146,12 @@ getScrollingCoords scanline cycle = do
 
 getSpriteAt :: Int -> IOEmulator Sprite
 getSpriteAt index = do
-  -- let baseOffset = fromIntegral $ index * 4
-  -- y <- load (Ppu $ OamData $ baseOffset)
-  -- tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
-  -- attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
-  -- x <- load (Ppu $ OamData $ baseOffset + 3)
-  -- pure $ Sprite (fromIntegral x, fromIntegral $ y + 1) tileIndexByte attributeByte
-  pure $ Sprite (1, 2) 3 4
+  let baseOffset = fromIntegral $ index * 4
+  y <- load (Ppu $ OamData $ baseOffset)
+  tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
+  attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
+  x <- load (Ppu $ OamData $ baseOffset + 3)
+  pure $ Sprite (fromIntegral x, fromIntegral $ y + 1) tileIndexByte attributeByte
 
 getSprites :: IOEmulator (V.Vector Sprite)
 getSprites = traverse getSpriteAt (V.fromList [0..64])
