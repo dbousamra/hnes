@@ -9,9 +9,10 @@ Welcome to hnes. hnes is a NES emulator written in Haskell.
 - [x] Mapper 2
 - [x] Nestest
 - [x] 100% CPU accuracy
-- [ ] SDL integration
+- [x] SDL integration
 - [x] Background rendering
-- [ ] Controller input handled
+- [x] Scrolling
+- [x] Controller input handled
 - [ ] Sprite rendering
 - [x] Performance tuning
 - [ ] More mappers
