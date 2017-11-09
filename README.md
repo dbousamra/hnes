@@ -34,3 +34,9 @@ Early on in the PPU
 <img src="screenshots/balloon-fight-1.png" width="256" height="240"/>
 
 <img src="screenshots/balloon-fight-2.png" width="256" height="240"/>
+
+<img src="screenshots/contra-1.png" width="256" height="240"/>
+
+<img src="screenshots/contra-2.png" width="256" height="240"/>
+
+<img src="screenshots/megaman-1.png" width="256" height="240"/>

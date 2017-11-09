@@ -7,6 +7,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Bits              (shiftL, shiftR, (.&.), (.|.))
 import           Data.IORef
+import           Data.Maybe             (fromJust, isJust)
 import qualified Data.Vector            as V
 import           Data.Word
 import           Emulator.Monad
@@ -81,19 +82,34 @@ handleFramePhase phase = case phase of
 
 renderScanline :: Int -> IOEmulator ()
 renderScanline scanline = do
-  sprites <- getSprites
-  forM_ [1..256] (renderBackgroundPixel scanline)
+  sprites <- getVisibleSprites scanline
+  forM_ [1..256] (\x -> do
+    coords <- getScrollingCoords scanline x
+    bgColor <- getBackgroundPixel coords
+    store (Ppu $ Screen coords) bgColor
+    -- spriteColor <- getSpritePixel (scanline, x) sprites
+    -- case spriteColor of
+    --   Just sc -> store (Ppu $ Screen coords) sc
+    --   Nothing -> store (Ppu $ Screen coords) bgColor
+    )
 
-renderBackgroundPixel :: Int -> Int -> IOEmulator ()
-renderBackgroundPixel scanline cycle = do
-  coords <- getScrollingCoords scanline cycle
+getBackgroundPixel :: Coords -> IOEmulator Color
+getBackgroundPixel coords = do
   nametableAddr <- getNametableAddr coords
   tile <- getTile nametableAddr
   patternColor <- getPatternColor tile coords
   attributeColor <- getAttributeColor nametableAddr
   let tileColor = fromIntegral $ (attributeColor `shiftL` 2) .|. patternColor
   paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + tileColor)
-  store (Ppu $ Screen coords) (getPaletteColor paletteIndex)
+  pure $ getPaletteColor paletteIndex
+
+getSpritePixel :: Coords -> V.Vector (Maybe Sprite) -> IOEmulator (Maybe Color)
+getSpritePixel coords sprites = do
+  let filtered = V.map fromJust $ V.filter isJust sprites
+  let inBoundingBox = V.find (spriteInBoundingBox coords) filtered
+  pure $ case inBoundingBox of
+    Just sprite -> Just $ (255, 0, 0)
+    Nothing     -> Nothing
 
 getNametableAddr :: Coords -> IOEmulator NameTableAddress
 getNametableAddr (x, y) = do
@@ -131,7 +147,7 @@ getAttributeColor (NameTableAddress x y base) = do
     (True, False)  -> (attr `shiftR` 4) .&. 0x3
     (False, False) -> (attr `shiftR` 6) .&. 0x3
 
-getPaletteColor :: Word8 -> (Word8, Word8, Word8)
+getPaletteColor :: Word8 -> Color
 getPaletteColor index = palette V.! (fromIntegral index)
 
 getScrollingCoords :: Int -> Int -> IOEmulator Coords
@@ -151,10 +167,32 @@ getSpriteAt index = do
   tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
   attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
   x <- load (Ppu $ OamData $ baseOffset + 3)
-  pure $ Sprite (fromIntegral x, fromIntegral $ y + 1) tileIndexByte attributeByte
+  pure $ Sprite (fromIntegral x, fromIntegral $ y) tileIndexByte attributeByte
 
 getSprites :: IOEmulator (V.Vector Sprite)
 getSprites = traverse getSpriteAt (V.fromList [0..64])
+
+getVisibleSprites :: Int -> IOEmulator (V.Vector (Maybe Sprite))
+getVisibleSprites scanline = do
+  sprites <- getSprites
+  visible <- V.filterM (spriteOnScanline scanline) sprites
+  pure $ V.take 8 (fmap Just visible V.++ V.replicate 8 Nothing)
+
+spriteOnScanline :: Int -> Sprite -> IOEmulator Bool
+spriteOnScanline scanline sprite = do
+  let (_, sy) = coords sprite
+  if scanline < sy then
+    pure False
+  else do
+    spriteSize <- load $ Ppu SpriteSize
+    case spriteSize of
+      Normal -> pure $ scanline < sy + 8
+      Double -> pure $ scanline < sy + 16
+
+spriteInBoundingBox :: Coords -> Sprite -> Bool
+spriteInBoundingBox (x, y) sprite =
+  let (sx, sy) = coords sprite
+  in (x >= sx) && (x < sx + 8)
 
 enterVBlank :: IOEmulator ()
 enterVBlank = do
@@ -168,7 +206,7 @@ exitVBlank = store (Ppu VerticalBlank) False
 idle :: IOEmulator ()
 idle = pure ()
 
-palette :: V.Vector (Word8, Word8, Word8)
+palette :: V.Vector Color
 palette = V.fromList
   [ (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88), (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
     (0x5C, 0x00, 0x7E), (0x6E, 0x00, 0x40), (0x6C, 0x06, 0x00), (0x56, 0x1D, 0x00),
@@ -186,3 +224,5 @@ palette = V.fromList
     (0xFB, 0xC2, 0xFF), (0xFE, 0xC4, 0xEA), (0xFE, 0xCC, 0xC5), (0xF7, 0xD8, 0xA5),
     (0xE4, 0xE5, 0x94), (0xCF, 0xEF, 0x96), (0xBD, 0xF4, 0xAB), (0xB3, 0xF3, 0xCC),
     (0xB5, 0xEB, 0xF2), (0xB8, 0xB8, 0xB8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00) ]
+
+

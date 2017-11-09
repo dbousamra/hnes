@@ -8,6 +8,8 @@ module Emulator.Util (
   , firstNibble
   , splitW16
   , sliceBS
+  , ifM
+  , findM
 ) where
 
 import           Data.Bits        (shiftL, shiftR, (.&.), (.|.))
@@ -42,4 +44,12 @@ firstNibble = toWord16 . fst . splitW16
 
 sliceBS :: Int -> Int -> BS.ByteString -> BS.ByteString
 sliceBS from to xs = BS.take (to - from) (BS.drop from xs)
+
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM b t f = do b <- b; if b then t else f
+
+findM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
+findM p []     = return Nothing
+findM p (x:xs) = ifM (p x) (return $ Just x) (findM p xs)
+
 

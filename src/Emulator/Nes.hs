@@ -4,6 +4,7 @@
 module Emulator.Nes (
     Nes(..)
   , Coords
+  , Color
   , Flag(..)
   , IncrementMode(..)
   , SpriteTableAddr(..)
@@ -33,6 +34,8 @@ import           Prelude                      hiding (read, replicate)
 import           System.Random
 
 type Coords = (Int, Int)
+
+type Color = (Word8, Word8, Word8)
 
 data IncrementMode = Horizontal | Vertical
 
@@ -143,12 +146,13 @@ data Ppu a where
   AttrTableByte :: Ppu Word8
   LoTileByte :: Ppu Word8
   HiTileByte :: Ppu Word8
+  SpriteSize :: Ppu SpriteSize
   TileData :: Ppu Word64
   PaletteData :: Int -> Ppu Word8
   OamData :: Word16 -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
-  Screen :: Coords -> Ppu (Word8, Word8, Word8)
+  Screen :: Coords -> Ppu Color
   ScreenBuffer :: Ppu (VUM.IOVector Word8)
 
 data Address a where
@@ -343,6 +347,7 @@ readPPU nes addr = case addr of
   LoTileByte          -> readIORef $ loTileByte $ ppu nes
   HiTileByte          -> readIORef $ hiTileByte $ ppu nes
   TileData            -> readIORef $ tileData $ ppu nes
+  SpriteSize          -> readIORef $ spriteSize $ ppu nes
   OamData addr        -> readOAMData' (ppu nes) addr
   PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
   ScreenBuffer        -> pure $ screen $ ppu nes
