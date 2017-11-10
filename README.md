@@ -48,3 +48,13 @@ Early on in the PPU
 <img src="screenshots/contra-2.png" width="256" height="240"/>
 
 <img src="screenshots/megaman-1.png" width="256" height="240"/>
+
+<img src="screenshots/megaman-2.png" width="256" height="240"/>
+
+<img src="screenshots/skydest-1.png" width="256" height="240"/>
+
+<img src="screenshots/slalom-1.png" width="256" height="240"/>
+
+<img src="screenshots/zelda-1.png" width="256" height="240"/>
+
+<img src="screenshots/mario-1.png" width="256" height="240"/>
