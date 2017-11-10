@@ -15,13 +15,22 @@ import           Emulator.Nes
 import           Emulator.Util
 import           Prelude                hiding (cycle)
 
-data FramePhase
-  = ScanlineRender Int
-  | ScanlineIdle
-  | PostRender
-  | VBlankEnter
-  | VBlankIdle
+data RenderPhase
+  = RenderVisible Int Int
+  | RenderPreFetch
+  | RenderIdle
+  deriving (Eq, Show)
+
+data VBlankPhase
+  = VBlankEnter
+  | VBLankIdle
   | VBlankExit
+  deriving (Eq, Show)
+
+data FramePhase
+  = Render RenderPhase
+  | PostRender
+  | VBlank VBlankPhase
   deriving (Eq, Show)
 
 data Sprite = Sprite {
@@ -64,34 +73,48 @@ tick = do
 
 getFramePhase :: Int -> Int -> FramePhase
 getFramePhase scanline cycle
-  | scanline >= 0 && scanline <= 239 && cycle == 1 = ScanlineRender scanline
+  | scanline >= 0 && scanline <= 239 = Render $ getRenderPhase scanline cycle
   | scanline == 240 = PostRender
+  | scanline >= 241 && scanline <= 261 = VBlank $ getVBlankPhase scanline cycle
+  | otherwise = error $ "Erronenous frame phase detected at scanline "
+    ++ show scanline ++ " and cycle "
+    ++ show cycle
+
+getRenderPhase :: Int -> Int -> RenderPhase
+getRenderPhase scanline cycle
+  | cycle == 0 = RenderIdle
+  | cycle >= 1 && cycle <= 256 = RenderVisible scanline cycle
+  | cycle >= 321 && cycle <= 336 = RenderPreFetch
+  | otherwise = RenderIdle
+
+getVBlankPhase :: Int -> Int -> VBlankPhase
+getVBlankPhase scanline cycle
   | scanline == 241 && cycle == 1 = VBlankEnter
-  | scanline >= 242 && scanline <= 260 = VBlankIdle
   | scanline == 261 && cycle == 1 = VBlankExit
-  | otherwise = ScanlineIdle
+  | otherwise = VBLankIdle
 
 handleFramePhase :: FramePhase -> IOEmulator ()
 handleFramePhase phase = case phase of
-  ScanlineRender scanline -> renderScanline scanline
-  ScanlineIdle            -> idle
-  PostRender              -> idle
-  VBlankEnter             -> enterVBlank
-  VBlankIdle              -> idle
-  VBlankExit              -> exitVBlank
+  Render phase -> handleRenderPhase phase
+  VBlank phase -> handleVBlankPhase phase
+  PostRender   -> idle
 
-renderScanline :: Int -> IOEmulator ()
-renderScanline scanline = do
-  sprites <- getVisibleSprites scanline
-  forM_ [1..256] (\x -> do
-    coords <- getScrollingCoords scanline x
-    bgColor <- getBackgroundPixel coords
-    store (Ppu $ Screen coords) bgColor
-    -- spriteColor <- getSpritePixel (scanline, x) sprites
-    -- case spriteColor of
-    --   Just sc -> store (Ppu $ Screen coords) sc
-    --   Nothing -> store (Ppu $ Screen coords) bgColor
-    )
+handleRenderPhase :: RenderPhase -> IOEmulator ()
+handleRenderPhase phase = case phase of
+  RenderVisible scanline cycle -> renderPixel scanline cycle
+  other                        -> idle
+
+handleVBlankPhase :: VBlankPhase -> IOEmulator ()
+handleVBlankPhase phase = case phase of
+  VBlankEnter -> enterVBlank
+  VBLankIdle  -> idle
+  VBlankExit  -> exitVBlank
+
+renderPixel :: Int -> Int -> IOEmulator ()
+renderPixel scanline cycle = do
+  coords <- getScrollingCoords scanline cycle
+  bgPixelColor <- getBackgroundPixel coords
+  store (Ppu $ Screen coords) bgPixelColor
 
 getBackgroundPixel :: Coords -> IOEmulator Color
 getBackgroundPixel coords = do
@@ -102,14 +125,6 @@ getBackgroundPixel coords = do
   let tileColor = fromIntegral $ (attributeColor `shiftL` 2) .|. patternColor
   paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + tileColor)
   pure $ getPaletteColor paletteIndex
-
-getSpritePixel :: Coords -> V.Vector (Maybe Sprite) -> IOEmulator (Maybe Color)
-getSpritePixel coords sprites = do
-  let filtered = V.map fromJust $ V.filter isJust sprites
-  let inBoundingBox = V.find (spriteInBoundingBox coords) filtered
-  pure $ case inBoundingBox of
-    Just sprite -> Just $ (255, 0, 0)
-    Nothing     -> Nothing
 
 getNametableAddr :: Coords -> IOEmulator NameTableAddress
 getNametableAddr (x, y) = do
@@ -160,40 +175,6 @@ getScrollingCoords scanline cycle = do
   let y' = if y >= 240 then y - 240 else y
   pure (x', y')
 
-getSpriteAt :: Int -> IOEmulator Sprite
-getSpriteAt index = do
-  let baseOffset = fromIntegral $ index * 4
-  y <- load (Ppu $ OamData $ baseOffset)
-  tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
-  attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
-  x <- load (Ppu $ OamData $ baseOffset + 3)
-  pure $ Sprite (fromIntegral x, fromIntegral $ y) tileIndexByte attributeByte
-
-getSprites :: IOEmulator (V.Vector Sprite)
-getSprites = traverse getSpriteAt (V.fromList [0..64])
-
-getVisibleSprites :: Int -> IOEmulator (V.Vector (Maybe Sprite))
-getVisibleSprites scanline = do
-  sprites <- getSprites
-  visible <- V.filterM (spriteOnScanline scanline) sprites
-  pure $ V.take 8 (fmap Just visible V.++ V.replicate 8 Nothing)
-
-spriteOnScanline :: Int -> Sprite -> IOEmulator Bool
-spriteOnScanline scanline sprite = do
-  let (_, sy) = coords sprite
-  if scanline < sy then
-    pure False
-  else do
-    spriteSize <- load $ Ppu SpriteSize
-    case spriteSize of
-      Normal -> pure $ scanline < sy + 8
-      Double -> pure $ scanline < sy + 16
-
-spriteInBoundingBox :: Coords -> Sprite -> Bool
-spriteInBoundingBox (x, y) sprite =
-  let (sx, sy) = coords sprite
-  in (x >= sx) && (x < sx + 8)
-
 enterVBlank :: IOEmulator ()
 enterVBlank = do
   store (Ppu VerticalBlank) True
@@ -224,5 +205,3 @@ palette = V.fromList
     (0xFB, 0xC2, 0xFF), (0xFE, 0xC4, 0xEA), (0xFE, 0xCC, 0xC5), (0xF7, 0xD8, 0xA5),
     (0xE4, 0xE5, 0x94), (0xCF, 0xEF, 0x96), (0xBD, 0xF4, 0xAB), (0xB3, 0xF3, 0xCC),
     (0xB5, 0xEB, 0xF2), (0xB8, 0xB8, 0xB8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00) ]
-
-
