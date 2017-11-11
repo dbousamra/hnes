@@ -148,7 +148,7 @@ data Ppu a where
   HiTileByte :: Ppu Word8
   SpriteSize :: Ppu SpriteSize
   TileData :: Ppu Word64
-  PaletteData :: Int -> Ppu Word8
+  PaletteData :: Word16 -> Ppu Word8
   OamData :: Word16 -> Ppu Word8
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
@@ -349,7 +349,7 @@ readPPU nes addr = case addr of
   TileData            -> readIORef $ tileData $ ppu nes
   SpriteSize          -> readIORef $ spriteSize $ ppu nes
   OamData addr        -> readOAMData' (ppu nes) addr
-  PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) i
+  PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral i)
   ScreenBuffer        -> pure $ screen $ ppu nes
   PpuMemory8 r        -> readPPUMemory nes r
 

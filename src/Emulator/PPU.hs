@@ -17,7 +17,7 @@ import           Prelude                hiding (cycle)
 
 data RenderPhase
   = RenderVisible Int Int
-  | RenderPreFetch
+  | RenderFetch Int Int
   | RenderIdle
   deriving (Eq, Show)
 
@@ -84,7 +84,7 @@ getRenderPhase :: Int -> Int -> RenderPhase
 getRenderPhase scanline cycle
   | cycle == 0 = RenderIdle
   | cycle >= 1 && cycle <= 256 = RenderVisible scanline cycle
-  | cycle >= 321 && cycle <= 336 = RenderPreFetch
+  | cycle >= 321 && cycle <= 336 = RenderFetch scanline cycle
   | otherwise = RenderIdle
 
 getVBlankPhase :: Int -> Int -> VBlankPhase
@@ -101,8 +101,10 @@ handleFramePhase phase = case phase of
 
 handleRenderPhase :: RenderPhase -> IOEmulator ()
 handleRenderPhase phase = case phase of
-  RenderVisible scanline cycle -> renderPixel scanline cycle
-  other                        -> idle
+  RenderVisible scanline cycle -> fetch scanline cycle >> renderPixel scanline cycle
+  -- RenderFetch scanline cycle   -> fetch scanline cycle
+  RenderFetch scanline cycle   -> idle
+  RenderIdle                   -> idle
 
 handleVBlankPhase :: VBlankPhase -> IOEmulator ()
 handleVBlankPhase phase = case phase of
@@ -118,52 +120,86 @@ renderPixel scanline cycle = do
 
 getBackgroundPixel :: Coords -> IOEmulator Color
 getBackgroundPixel coords = do
-  nametableAddr <- getNametableAddr coords
-  tile <- getTile nametableAddr
-  patternColor <- getPatternColor tile coords
-  attributeColor <- getAttributeColor nametableAddr
-  let tileColor = fromIntegral $ (attributeColor `shiftL` 2) .|. patternColor
-  paletteIndex <- load $ Ppu $ PpuMemory8 (0x3F00 + tileColor)
-  pure $ getPaletteColor paletteIndex
+  tileData <- fetchTileData
+  let shifted = tileData `shiftR` (7 * 4)
+  let index = fromIntegral (shifted .&. 0x0F)
+  c <- readPalette index
+  let color = getPaletteColor $ fromIntegral index
+  pure color
 
-getNametableAddr :: Coords -> IOEmulator NameTableAddress
-getNametableAddr (x, y) = do
-  base <- load $ Ppu NameTableAddr
-  let x' = fromIntegral $ x `div` 8 `mod` 64 `mod` 32 -- not sure
-  let y' = fromIntegral $ y `div` 8 `mod` 60 `mod` 30
-  pure $ NameTableAddress x' y' base
+readPalette :: Word16 -> IOEmulator Word8
+readPalette addr = do
+  let addr' = if (addr >= 16) && (addr `mod` 4 == 0) then addr - 16 else addr
+  load $ Ppu $ PaletteData addr'
 
-getTile :: NameTableAddress -> IOEmulator Word8
-getTile (NameTableAddress x y base) = load (Ppu $ PpuMemory8 addr)
-  where addr = base + 32 * fromIntegral y + fromIntegral x
+fetch :: Int -> Int -> IOEmulator ()
+fetch scanline cycle = do
+  modify (Ppu TileData) (\x -> x `shiftL` 4)
+  case cycle `mod` 8 of
+    1 -> fetchNameTableValue
+    3 -> fetchAttributeTableValue
+    5 -> fetchLowTileValue
+    7 -> fetchHighTileValue
+    0 -> storeTileData
+    _ -> idle
 
-getPatternColor :: Word8 -> Coords -> IOEmulator Word8
-getPatternColor tile (x, y) = do
-  let (x', y') = (x `mod` 8, y `mod` 8)
+fetchNameTableValue :: IOEmulator ()
+fetchNameTableValue = do
+  v <- load $ Ppu CurrentVRamAddr
+  trace $ show v
+  let addr = PpuMemory8 (0x2000 .|. (v .&. 0x0FFF))
+  ntv <- load $ Ppu addr
+  store (Ppu NameTableByte) ntv
 
-  bgTableAddr <- load $ Ppu BackgroundTableAddr
-  let offset = (fromIntegral tile `shiftL` 4) + fromIntegral y' + bgTableAddr
+fetchAttributeTableValue :: IOEmulator ()
+fetchAttributeTableValue = do
+  v <- load $ Ppu CurrentVRamAddr
+  let addr = PpuMemory8 $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `shiftR` 4) .&. 0x38) .|. ((v `shiftR` 2) .&. 0x07)
+  v' <- load $ Ppu addr
+  let shift = fromIntegral $ ((v `shiftR` 4) .&. 4) .|. (v .&. 2)
+  let atv = ((v' `shiftR` shift) .&. 3) `shiftL` 2
+  store (Ppu AttrTableByte) atv
 
-  pattern0 <- load $ Ppu $ PpuMemory8 offset
-  pattern1 <- load $ Ppu $ PpuMemory8 $ offset + 8
-  let bit0 = (pattern0 `shiftR` (7 - (fromIntegral x' `mod` 8))) .&. 1
-  let bit1 = (pattern1 `shiftR` (7 - (fromIntegral x' `mod` 8))) .&. 1
+fetchLowTileValue :: IOEmulator ()
+fetchLowTileValue = do
+  v <- load $ Ppu CurrentVRamAddr
+  let fineY = (v `shiftR` 12) .&. 7
+  bt <- load $ Ppu BackgroundTableAddr
+  ntv <- load $ Ppu NameTableByte
+  let addr = PpuMemory8 $ (0x1000 * bt) + (fromIntegral ntv) * 16 + fineY
+  ltv <- load $ Ppu addr
+  store (Ppu LoTileByte) ltv
 
-  pure $ (bit1 `shiftL` 1) .|. bit0
+fetchHighTileValue :: IOEmulator ()
+fetchHighTileValue = do
+  ntv <- load $ Ppu NameTableByte
+  v <- load $ Ppu CurrentVRamAddr
+  bt <- load $ Ppu BackgroundTableAddr
+  let fineY = (v `shiftR` 12) .&. 7
+  let addr = PpuMemory8 $ (0x1000 * bt) + (fromIntegral ntv) * 16 + fineY + 8
+  htv <- load $ Ppu addr
+  store (Ppu HiTileByte) htv
 
-getAttributeColor :: NameTableAddress -> IOEmulator Word8
-getAttributeColor (NameTableAddress x y base) = do
-  let group = fromIntegral $ (y `div` 4 * 8) + (x `div` 4)
-  attr <- load $ Ppu $ PpuMemory8 (base + 0x3C0 + group)
-  let (left, top) = (x `mod` 4 < 2, y `mod` 4 < 2)
-  pure $ case (left, top) of
-    (True, True)   -> attr .&. 3
-    (False, True)  -> (attr `shiftR` 2) .&. 0x3
-    (True, False)  -> (attr `shiftR` 4) .&. 0x3
-    (False, False) -> (attr `shiftR` 6) .&. 0x3
+fetchTileData :: IOEmulator Word32
+fetchTileData = do
+  tileData <- load $ Ppu TileData
+  pure $ fromIntegral $ tileData `shiftR` 32
 
-getPaletteColor :: Word8 -> Color
-getPaletteColor index = palette V.! (fromIntegral index)
+storeTileData :: IOEmulator ()
+storeTileData = do
+  lotv <- load $ Ppu LoTileByte
+  hitv <- load $ Ppu HiTileByte
+  atv <- load $ Ppu AttrTableByte
+
+  let tileData = do
+        i <- [0..7]
+        let p1 = ((lotv `shiftL` i) .&. 0x80) `shiftR` 7
+        let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
+        pure $ atv .|. p1 .|. p2
+
+  let tileData' = foldl op 0 tileData
+       where op acc i = (acc `shiftL` 4) .|. i
+  modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
 
 getScrollingCoords :: Int -> Int -> IOEmulator Coords
 getScrollingCoords scanline cycle = do
@@ -186,6 +222,9 @@ exitVBlank = store (Ppu VerticalBlank) False
 
 idle :: IOEmulator ()
 idle = pure ()
+
+getPaletteColor :: Word8 -> Color
+getPaletteColor index = palette V.! (fromIntegral index)
 
 palette :: V.Vector Color
 palette = V.fromList
