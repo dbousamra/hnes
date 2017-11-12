@@ -14,32 +14,7 @@ import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Util
 import           Prelude                hiding (cycle)
-
-data RenderPhase
-  = RenderVisible Int Int
-  | RenderFetch Int Int
-  | RenderIdle
-  deriving (Eq, Show)
-
-data VBlankPhase
-  = VBlankEnter
-  | VBLankIdle
-  | VBlankExit
-  deriving (Eq, Show)
-
-data FramePhase
-  = Render RenderPhase
-  | PostRender
-  | VBlank VBlankPhase
-  deriving (Eq, Show)
-
-data Sprite = Sprite {
-  coords        :: Coords,
-  tileIndexByte :: Word8,
-  attributeByte :: Word8
-} deriving (Show, Eq)
-
-data NameTableAddress = NameTableAddress Word8 Word8 Word16 deriving (Show, Eq)
+import           System.Exit
 
 reset :: IOEmulator ()
 reset = do
@@ -50,8 +25,7 @@ reset = do
 step :: IOEmulator ()
 step = do
   (scanline, cycle) <- tick
-  let phase = getFramePhase scanline cycle
-  handleFramePhase phase
+  handleLinePhase scanline cycle
 
 tick :: IOEmulator Coords
 tick = do
@@ -71,66 +45,51 @@ tick = do
   cycle <- load $ Ppu PpuCycles
   pure (scanline, cycles)
 
-getFramePhase :: Int -> Int -> FramePhase
-getFramePhase scanline cycle
-  | scanline >= 0 && scanline <= 239 = Render $ getRenderPhase scanline cycle
-  | scanline == 240 = PostRender
-  | scanline >= 241 && scanline <= 261 = VBlank $ getVBlankPhase scanline cycle
-  | otherwise = error $ "Erronenous frame phase detected at scanline "
-    ++ show scanline ++ " and cycle "
-    ++ show cycle
+handleLinePhase :: Int -> Int -> IOEmulator ()
+handleLinePhase scanline cycle = do
+  let preLine = scanline == 261
+  let visibleLine = scanline < 240
 
-getRenderPhase :: Int -> Int -> RenderPhase
-getRenderPhase scanline cycle
-  | cycle == 0 = RenderIdle
-  | cycle >= 1 && cycle <= 256 = RenderVisible scanline cycle
-  | cycle >= 321 && cycle <= 336 = RenderFetch scanline cycle
-  | otherwise = RenderIdle
+  let visibleCycle = cycle >= 1 && cycle <= 256
+  let preFetchCycle = cycle >= 321 && cycle <= 336
+  let fetchCycle = visibleCycle || (cycle >= 321 && cycle <= 336)
 
-getVBlankPhase :: Int -> Int -> VBlankPhase
-getVBlankPhase scanline cycle
-  | scanline == 241 && cycle == 1 = VBlankEnter
-  | scanline == 261 && cycle == 1 = VBlankExit
-  | otherwise = VBLankIdle
+  renderBg <- load (Ppu BackgroundVisible)
+  when renderBg $ do
 
-handleFramePhase :: FramePhase -> IOEmulator ()
-handleFramePhase phase = case phase of
-  Render phase -> handleRenderPhase phase
-  VBlank phase -> handleVBlankPhase phase
-  PostRender   -> idle
+    when (visibleLine && visibleCycle) $
+      renderPixel scanline cycle
 
-handleRenderPhase :: RenderPhase -> IOEmulator ()
-handleRenderPhase phase = case phase of
-  RenderVisible scanline cycle -> fetch scanline cycle >> renderPixel scanline cycle
-  -- RenderFetch scanline cycle   -> fetch scanline cycle
-  RenderFetch scanline cycle   -> idle
-  RenderIdle                   -> idle
+    when ((visibleLine || preLine) && fetchCycle) $
+      fetch scanline cycle
 
-handleVBlankPhase :: VBlankPhase -> IOEmulator ()
-handleVBlankPhase phase = case phase of
-  VBlankEnter -> enterVBlank
-  VBLankIdle  -> idle
-  VBlankExit  -> exitVBlank
+    when (preLine && cycle >= 280 && cycle <= 304) $
+      copyY
+
+  when (scanline == 241 && cycle == 1) $
+    enterVBlank
+
+  when (preLine && cycle == 1) $
+    exitVBlank
 
 renderPixel :: Int -> Int -> IOEmulator ()
 renderPixel scanline cycle = do
-  coords <- getScrollingCoords scanline cycle
-  bgPixelColor <- getBackgroundPixel coords
-  store (Ppu $ Screen coords) bgPixelColor
+  let coords = getScrollingCoords scanline cycle
+  color <- getBackgroundPixel coords
+  i <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral color)
+  let index' = i `mod` 64
+  let c = getPaletteColor index'
+  store (Ppu $ Screen coords) c
 
-getBackgroundPixel :: Coords -> IOEmulator Color
+getBackgroundPixel :: Coords -> IOEmulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
   let shifted = tileData `shiftR` (7 * 4)
-  let index = fromIntegral (shifted .&. 0x0F)
-  c <- readPalette index
-  let color = getPaletteColor $ fromIntegral index
-  pure color
+  pure $ fromIntegral $ shifted .&. 0x0F
 
 readPalette :: Word16 -> IOEmulator Word8
-readPalette addr = do
-  let addr' = if (addr >= 16) && (addr `mod` 4 == 0) then addr - 16 else addr
-  load $ Ppu $ PaletteData addr'
+readPalette addr = load $ Ppu $ PaletteData addr'
+  where addr' = if (addr >= 16) && (addr `mod` 4 == 0) then addr - 16 else addr
 
 fetch :: Int -> Int -> IOEmulator ()
 fetch scanline cycle = do
@@ -146,7 +105,6 @@ fetch scanline cycle = do
 fetchNameTableValue :: IOEmulator ()
 fetchNameTableValue = do
   v <- load $ Ppu CurrentVRamAddr
-  trace $ show v
   let addr = PpuMemory8 (0x2000 .|. (v .&. 0x0FFF))
   ntv <- load $ Ppu addr
   store (Ppu NameTableByte) ntv
@@ -166,7 +124,7 @@ fetchLowTileValue = do
   let fineY = (v `shiftR` 12) .&. 7
   bt <- load $ Ppu BackgroundTableAddr
   ntv <- load $ Ppu NameTableByte
-  let addr = PpuMemory8 $ (0x1000 * bt) + (fromIntegral ntv) * 16 + fineY
+  let addr = PpuMemory8 $ bt + (fromIntegral ntv) * 16 + fineY
   ltv <- load $ Ppu addr
   store (Ppu LoTileByte) ltv
 
@@ -176,7 +134,7 @@ fetchHighTileValue = do
   v <- load $ Ppu CurrentVRamAddr
   bt <- load $ Ppu BackgroundTableAddr
   let fineY = (v `shiftR` 12) .&. 7
-  let addr = PpuMemory8 $ (0x1000 * bt) + (fromIntegral ntv) * 16 + fineY + 8
+  let addr = PpuMemory8 $ bt + (fromIntegral ntv) * 16 + fineY + 8
   htv <- load $ Ppu addr
   store (Ppu HiTileByte) htv
 
@@ -195,21 +153,18 @@ storeTileData = do
         i <- [0..7]
         let p1 = ((lotv `shiftL` i) .&. 0x80) `shiftR` 7
         let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
-        pure $ atv .|. p1 .|. p2
+        pure $ fromIntegral $ atv .|. p1 .|. p2 :: [Word32]
 
   let tileData' = foldl op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
+
   modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
 
-getScrollingCoords :: Int -> Int -> IOEmulator Coords
-getScrollingCoords scanline cycle = do
-  scrollX <- load $ Ppu ScrollX
-  scrollY <- load $ Ppu ScrollY
-  let x = cycle - 1 + fromIntegral scrollX
-  let y = scanline + fromIntegral scrollY
-  let x' = if x >= 256 then x - 256 else x
-  let y' = if y >= 240 then y - 240 else y
-  pure (x', y')
+copyY :: IOEmulator ()
+copyY = modify (Ppu CurrentVRamAddr) (.&. 0x841F)
+
+getScrollingCoords :: Int -> Int -> Coords
+getScrollingCoords scanline cycle = (cycle - 1, scanline)
 
 enterVBlank :: IOEmulator ()
 enterVBlank = do
@@ -244,3 +199,5 @@ palette = V.fromList
     (0xFB, 0xC2, 0xFF), (0xFE, 0xC4, 0xEA), (0xFE, 0xCC, 0xC5), (0xF7, 0xD8, 0xA5),
     (0xE4, 0xE5, 0x94), (0xCF, 0xEF, 0x96), (0xBD, 0xF4, 0xAB), (0xB3, 0xF3, 0xCC),
     (0xB5, 0xEB, 0xF2), (0xB8, 0xB8, 0xB8), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00) ]
+
+

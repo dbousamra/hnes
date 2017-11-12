@@ -96,7 +96,7 @@ data PPU = PPU {
   colorMode             :: IORef ColorMode,
   leftBgVisibility      :: IORef Visibility,
   leftSpritesVisibility :: IORef Visibility,
-  bgVisibility          :: IORef Visibility,
+  bgVisibility          :: IORef Bool,
   spriteVisibility      :: IORef Visibility,
   intensifyReds         :: IORef Bool,
   intensifyGreens       :: IORef Bool,
@@ -147,6 +147,7 @@ data Ppu a where
   LoTileByte :: Ppu Word8
   HiTileByte :: Ppu Word8
   SpriteSize :: Ppu SpriteSize
+  BackgroundVisible :: Ppu Bool
   TileData :: Ppu Word64
   PaletteData :: Word16 -> Ppu Word8
   OamData :: Word16 -> Ppu Word8
@@ -287,7 +288,7 @@ newPPU = do
   colorMode <- newIORef Color
   leftBgVis <- newIORef Hidden
   leftSpritesVis <- newIORef Hidden
-  bgVis <- newIORef Hidden
+  bgVis <- newIORef True
   spriteVis <- newIORef Hidden
   intensifyReds <- newIORef False
   intensifyGreens <- newIORef False
@@ -343,6 +344,7 @@ readPPU nes addr = case addr of
   ScrollX             -> fmap (fromIntegral . (`shiftR` 8)) (readIORef $ scrollXY $ ppu nes)
   ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
   NameTableByte       -> readIORef $ nameTableByte $ ppu nes
+  BackgroundVisible   -> readIORef $ bgVisibility $ ppu nes
   AttrTableByte       -> readIORef $ attrTableByte $ ppu nes
   LoTileByte          -> readIORef $ loTileByte $ ppu nes
   HiTileByte          -> readIORef $ hiTileByte $ ppu nes
@@ -355,16 +357,17 @@ readPPU nes addr = case addr of
 
 writePPU :: PPU -> Ppu a -> a -> IO ()
 writePPU ppu addr v = case addr of
-  PpuCycles     -> modifyIORef' (ppuCycles ppu) (const v)
-  Scanline      -> modifyIORef' (scanline ppu) (const v)
-  FrameCount    -> modifyIORef' (frameCount ppu) (const v)
-  VerticalBlank -> modifyIORef' (verticalBlank ppu) (const v)
-  NameTableByte -> modifyIORef' (nameTableByte ppu) (const v)
-  AttrTableByte -> modifyIORef' (attrTableByte ppu) (const v)
-  LoTileByte    -> modifyIORef' (loTileByte ppu) (const v)
-  HiTileByte    -> modifyIORef' (hiTileByte ppu) (const v)
-  TileData      -> modifyIORef' (tileData ppu) (const v)
-  Screen coords -> do
+  PpuCycles       -> modifyIORef' (ppuCycles ppu) (const v)
+  Scanline        -> modifyIORef' (scanline ppu) (const v)
+  FrameCount      -> modifyIORef' (frameCount ppu) (const v)
+  CurrentVRamAddr -> modifyIORef' (currentVramAddress ppu) (const v)
+  VerticalBlank   -> modifyIORef' (verticalBlank ppu) (const v)
+  NameTableByte   -> modifyIORef' (nameTableByte ppu) (const v)
+  AttrTableByte   -> modifyIORef' (attrTableByte ppu) (const v)
+  LoTileByte      -> modifyIORef' (loTileByte ppu) (const v)
+  HiTileByte      -> modifyIORef' (hiTileByte ppu) (const v)
+  TileData        -> modifyIORef' (tileData ppu) (const v)
+  Screen coords   -> do
     let (r, g, b) = v
     let offset = fromIntegral $ translateXY coords 256 * 3
     VUM.write (screen ppu) (offset + 0) r
@@ -459,7 +462,7 @@ writeMask ppu v = do
   modifyIORef' (colorMode ppu) $ const $ if testBit v 0 then Grayscale else Color
   modifyIORef' (leftBgVisibility ppu) $ const $ if testBit v 1 then Shown else Hidden
   modifyIORef' (leftSpritesVisibility ppu) $ const $ if testBit v 2 then Shown else Hidden
-  modifyIORef' (bgVisibility ppu) $ const $ if testBit v 3 then Shown else Hidden
+  modifyIORef' (bgVisibility ppu) $ const $ if testBit v 3 then True else False
   modifyIORef' (spriteVisibility ppu) $ const $ if testBit v 4 then Shown else Hidden
   modifyIORef' (intensifyReds ppu) $ const $ testBit v 5
   modifyIORef' (intensifyGreens ppu) $ const $ testBit v 6
