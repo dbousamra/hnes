@@ -5,7 +5,7 @@ module Emulator.PPU (
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (shiftL, shiftR, (.&.), (.|.))
+import           Data.Bits              (shiftL, shiftR, xor, (.&.), (.|.))
 import           Data.IORef
 import           Data.Maybe             (fromJust, isJust)
 import qualified Data.Vector            as V
@@ -65,6 +65,16 @@ handleLinePhase scanline cycle = do
 
     when (preLine && cycle >= 280 && cycle <= 304) $
       copyY
+
+    when (preLine || visibleLine) $ do
+      when ((preFetchCycle || visibleCycle) && cycle `mod` 8 == 0)
+        incrementX
+
+      when (cycle == 256)
+        incrementY
+
+      when (cycle == 257)
+        copyX
 
   when (scanline == 241 && cycle == 1) $
     enterVBlank
@@ -162,6 +172,39 @@ storeTileData = do
 
 copyY :: IOEmulator ()
 copyY = modify (Ppu CurrentVRamAddr) (.&. 0x841F)
+
+copyX :: IOEmulator ()
+copyX = modify (Ppu CurrentVRamAddr) (.&. 0xFBE0)
+
+incrementX :: IOEmulator ()
+incrementX = do
+  v <- load $ Ppu CurrentVRamAddr
+  if v .&. 0x001F == 31 then
+    modify (Ppu CurrentVRamAddr) ((.&. 0xFFE0) . (`xor` 0x0400))
+  else
+    modify (Ppu CurrentVRamAddr) (+ 1)
+
+incrementY :: IOEmulator ()
+incrementY = do
+  v <- load $ Ppu CurrentVRamAddr
+  if v .&. 0x7000 /= 0x7000 then
+    modify (Ppu CurrentVRamAddr) (+ 0x1000)
+  else do
+    modify (Ppu CurrentVRamAddr) (.&. 0x8FFF)
+    let y = (v .&. 0x03E0) `shiftR` 5
+
+    y' <- if y == 29 then do
+      modify (Ppu CurrentVRamAddr) (`xor` 0x0800)
+      pure 0
+    else if y == 31 then
+      pure 0
+    else
+      pure $ y + 1
+
+    v' <- load $ Ppu CurrentVRamAddr
+    store (Ppu CurrentVRamAddr) ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
+
+
 
 getScrollingCoords :: Int -> Int -> Coords
 getScrollingCoords scanline cycle = (cycle - 1, scanline)
