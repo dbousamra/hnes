@@ -378,7 +378,7 @@ readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
   | addr' < 0x2000 = Cartridge.read (cart nes) addr'
   | addr' < 0x3F00 = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
-  | addr' < 0x4000 = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20)
+  | addr' < 0x4000 = readPalette nes addr'
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
 
@@ -386,7 +386,7 @@ writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
 writePPUMemory nes addr v
   | addr' < 0x2000 = Cartridge.write (cart nes) addr' v
   | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
-  | addr' < 0x4000 = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ addr' `mod` 0x20) v
+  | addr' < 0x4000 = writePalette nes addr' v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
@@ -462,7 +462,7 @@ writeMask ppu v = do
   modifyIORef' (colorMode ppu) $ const $ if testBit v 0 then Grayscale else Color
   modifyIORef' (leftBgVisibility ppu) $ const $ if testBit v 1 then Shown else Hidden
   modifyIORef' (leftSpritesVisibility ppu) $ const $ if testBit v 2 then Shown else Hidden
-  modifyIORef' (bgVisibility ppu) $ const $ if testBit v 3 then True else False
+  modifyIORef' (bgVisibility ppu) $ const $ testBit v 3
   modifyIORef' (spriteVisibility ppu) $ const $ if testBit v 4 then Shown else Hidden
   modifyIORef' (intensifyReds ppu) $ const $ testBit v 5
   modifyIORef' (intensifyGreens ppu) $ const $ testBit v 6
@@ -513,6 +513,17 @@ writeData nes v = do
         Horizontal -> 1
         Vertical   -> 32
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
+
+writePalette :: Nes -> Word16 -> Word8 -> IO ()
+writePalette nes addr v = do
+  -- let addr' = (addr - 0x3F00) `mod` 0x20
+  let addr' = if addr >= 16 && addr `mod` 4 == 0 then addr - 16 else addr
+  VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral addr') v
+
+readPalette :: Nes -> Word16 -> IO Word8
+readPalette nes addr = do
+  let addr' = if addr >= 16 && addr `mod` 4 == 0 then addr - 16 else addr
+  VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral addr')
 
 writeKeys :: Nes -> [Controller.Key] -> IO ()
 writeKeys = Controller.setKeysDown . controller

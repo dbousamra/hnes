@@ -49,6 +49,7 @@ handleLinePhase :: Int -> Int -> IOEmulator ()
 handleLinePhase scanline cycle = do
   let preLine = scanline == 261
   let visibleLine = scanline < 240
+  let renderLine = preLine || visibleLine
 
   let visibleCycle = cycle >= 1 && cycle <= 256
   let preFetchCycle = cycle >= 321 && cycle <= 336
@@ -60,7 +61,7 @@ handleLinePhase scanline cycle = do
     when (visibleLine && visibleCycle) $
       renderPixel scanline cycle
 
-    when ((visibleLine || preLine) && fetchCycle) $
+    when (renderLine && fetchCycle) $
       fetch scanline cycle
 
     when (preLine && cycle >= 280 && cycle <= 304) $
@@ -103,7 +104,7 @@ readPalette addr = load $ Ppu $ PaletteData addr'
 
 fetch :: Int -> Int -> IOEmulator ()
 fetch scanline cycle = do
-  modify (Ppu TileData) (\x -> x `shiftL` 4)
+  modify (Ppu TileData) (`shiftL` 4)
   case cycle `mod` 8 of
     1 -> fetchNameTableValue
     3 -> fetchAttributeTableValue
@@ -203,7 +204,6 @@ incrementY = do
 
     v' <- load $ Ppu CurrentVRamAddr
     store (Ppu CurrentVRamAddr) ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
-
 
 
 getScrollingCoords :: Int -> Int -> Coords
