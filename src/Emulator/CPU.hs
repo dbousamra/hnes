@@ -45,12 +45,12 @@ stepT = do
   startingCycles <- load $ Cpu CpuCycles
   handleInterrupts
   opcode <- loadNextOpcode
+  trace <- mkTrace opcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
   addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
   runInstruction opcode addr
   endingCycles <- load $ Cpu CpuCycles
-  trace <- mkTrace opcode
   pure $ (endingCycles - startingCycles, trace)
 
 mkTrace :: Opcode -> IOEmulator Trace

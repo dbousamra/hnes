@@ -35,39 +35,13 @@ main = do
   -- Create NES
   runIOEmulator cart' $ do
     reset
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
-    stepFrame
     appLoop 0 0 renderer window
 
 appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator ()
 appLoop lastTime frames renderer window = do
   intents <- liftIO $ eventsToIntents <$> SDL.pollEvents
   store Keys (intentsToKeys intents)
-  -- stepFrame
+  stepFrame
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer

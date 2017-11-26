@@ -3,7 +3,7 @@ module Nestest.Spec where
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
-import           Emulator               (stepT)
+import           Emulator.CPU           (stepT)
 import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Trace         (Trace (..), renderTrace)
@@ -23,7 +23,7 @@ test = testCase "nestest" $ do
   where
     emulate :: [String] -> IOEmulator ()
     emulate lines = do
-      trace <- stepT
+      (_, trace) <- stepT
       case lines of
         [] -> pure ()
         (x:xs) -> case parse parseTrace "nestest.log" x of
