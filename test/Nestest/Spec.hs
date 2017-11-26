@@ -1,12 +1,11 @@
 module Nestest.Spec where
 
-import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Emulator.CPU           (stepT)
 import           Emulator.Monad
 import           Emulator.Nes
-import           Emulator.Trace         (Trace (..), renderTrace)
+import           Emulator.Trace         (Trace (..))
 import           Emulator.Util          (prettifyWord16)
 import           Nestest.Parsing        (parseTrace)
 import           Test.Tasty
