@@ -4,13 +4,15 @@ sudo: false
 language: generic
 cache:
   directories:
-  - "$HOME/.stack"
+    - "$HOME/.stack"
 before_install:
-- mkdir -p ~/.local/bin
-- export PATH=$HOME/.local/bin:$PATH
-- travis_retry curl -L https://www.stackage.org/stack/osx-x86_64 | tar xz --strip-components=1 -C ~/.local/bin '*/stack'
+  - mkdir -p ~/.local/bin
+  - export PATH=$HOME/.local/bin:$PATH
+  - travis_retry curl -L https://www.stackage.org/stack/osx-x86_64 | tar xz --strip-components=1 -C ~/.local/bin '*/stack'
 install:
-- stack --no-terminal --install-ghc test --only-dependencies
+  - sudo apt-get update
+  - sudo apt-get install libsdl1.2-dev libsdl-mixer1.2-dev libsdl-image1.2-dev
+  - stack --no-terminal --install-ghc test --only-dependencies
 script:
-- stack --no-terminal build --copy-bins --local-bin-path .
-- stack --no-terminal test
+  - stack --no-terminal build --copy-bins --local-bin-path .
+  - stack --no-terminal test
