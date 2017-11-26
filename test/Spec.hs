@@ -1,4 +1,4 @@
-module Spec where
+module Main where
 
 import qualified Nestest.Spec     as Nestest
 import           Test.Tasty
