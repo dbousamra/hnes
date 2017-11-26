@@ -1,6 +1,7 @@
 module Emulator.CPU(
     reset
   , step
+  , stepT
 ) where
 
 import           Control.Monad
@@ -36,8 +37,24 @@ step = do
   endingCycles <- load $ Cpu CpuCycles
   pure $ endingCycles - startingCycles
 
-trace :: Opcode -> IOEmulator Trace
-trace op = do
+stepT :: IOEmulator (Int, Trace)
+stepT = do
+  -- Start counting the number of cycles.
+  -- Some of the opcodes (the branch ones)
+  -- modify the cycle count directly due to page crosses
+  startingCycles <- load $ Cpu CpuCycles
+  handleInterrupts
+  opcode <- loadNextOpcode
+  (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
+  addCycles $ getCycles opcode pageCrossed
+  incrementPc opcode
+  runInstruction opcode addr
+  endingCycles <- load $ Cpu CpuCycles
+  trace <- mkTrace opcode
+  pure $ (endingCycles - startingCycles, trace)
+
+mkTrace :: Opcode -> IOEmulator Trace
+mkTrace op = do
   pcv <- load $ Cpu Pc
   a0 <- load $ Cpu $ CpuMemory8 pcv
   a1 <- load $ Cpu $ CpuMemory8 (pcv + 1)

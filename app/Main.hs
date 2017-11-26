@@ -22,7 +22,9 @@ main = do
   -- Set up SDL
   SDL.initializeAll
   -- Create Window
-  let windowConfig = SDL.defaultWindow { windowInitialSize = V2 512 480 }
+  let windowConfig = SDL.defaultWindow {
+    windowInitialSize = V2 (fromIntegral $ width * scale) (fromIntegral $ height * scale)
+  }
   window <- SDL.createWindow "hnes" windowConfig
   -- Create Renderer
   let rendererConfig = RendererConfig {
@@ -33,13 +35,39 @@ main = do
   -- Create NES
   runIOEmulator cart' $ do
     reset
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
+    stepFrame
     appLoop 0 0 renderer window
 
 appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator ()
 appLoop lastTime frames renderer window = do
   intents <- liftIO $ eventsToIntents <$> SDL.pollEvents
   store Keys (intentsToKeys intents)
-  stepFrame
+  -- stepFrame
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer
@@ -58,7 +86,7 @@ appLoop lastTime frames renderer window = do
 render :: SDL.Renderer -> IOEmulator SDL.Texture
 render renderer = do
   mv <- load $ Ppu ScreenBuffer
-  surface <- createRGBSurfaceFrom mv (V2 256 240) (256 * 3) SDL.RGB24
+  surface <- createRGBSurfaceFrom mv (V2 256 240) (256 * fromIntegral scale) SDL.RGB24
   texture <- createTextureFromSurface renderer surface
   SDL.freeSurface surface
   pure texture
@@ -88,6 +116,15 @@ intentsToKeys = catMaybes . fmap (\x -> case x of
     KeyPress a -> Just a
     _          -> Nothing
   )
+
+scale :: Int
+scale = 3
+
+width :: Int
+width = 256
+
+height :: Int
+height = 240
 
 data Intent
   = Exit

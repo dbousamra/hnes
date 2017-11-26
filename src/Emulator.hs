@@ -1,5 +1,6 @@
 module Emulator (
     step
+  , stepT
   , stepFrame
   , reset
 ) where
@@ -18,6 +19,12 @@ step :: IOEmulator ()
 step = do
   cycles' <- CPU.step
   replicateM_ (cycles' * 3) PPU.step
+
+stepT :: IOEmulator Trace
+stepT = do
+  (cycles', trace) <- CPU.stepT
+  replicateM_ (cycles' * 3) PPU.step
+  pure trace
 
 stepFrame :: IOEmulator ()
 stepFrame = do

@@ -378,7 +378,7 @@ readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
   | addr' < 0x2000 = Cartridge.read (cart nes) addr'
   | addr' < 0x3F00 = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
-  | addr' < 0x4000 = readPalette nes (addr' `mod` 32)
+  | addr' < 0x4000 = readPalette nes addr'
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
 
@@ -386,7 +386,7 @@ writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
 writePPUMemory nes addr v
   | addr' < 0x2000 = Cartridge.write (cart nes) addr' v
   | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
-  | addr' < 0x4000 = writePalette nes (addr' `mod` 32) v
+  | addr' < 0x4000 = writePalette nes addr' v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
@@ -515,12 +515,14 @@ writeData nes v = do
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
 
 writePalette :: Nes -> Word16 -> Word8 -> IO ()
-writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral addr')
-  where addr' = if addr >= 16 && addr `mod` 4 == 0 then addr - 16 else addr
+writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
 
 readPalette :: Nes -> Word16 -> IO Word8
-readPalette nes addr = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral addr')
-  where addr' = if addr >= 16 && addr `mod` 4 == 0 then addr - 16 else addr
+readPalette nes addr = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
+
+mirroredPaletteAddr :: Word16 -> Word16
+mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
+  where addr' = addr `mod` 32
 
 writeKeys :: Nes -> [Controller.Key] -> IO ()
 writeKeys = Controller.setKeysDown . controller

@@ -53,6 +53,7 @@ test-suite hnes-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       Nestest.Parsing
+                     , Nestest.Spec
   build-depends:       base
                      , hnes
                      , bytestring
