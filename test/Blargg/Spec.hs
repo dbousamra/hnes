@@ -1,21 +1,33 @@
 module Blargg.Spec where
 
+import           Control.Monad
+import qualified Data.ByteString  as BS
+import           Emulator
+import           Emulator.Monad
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Text.Parsec      (parse)
 
-
-
 test :: TestTree
-test = testGroup "Tests" [
-    testOne
-  , testTwo
+test = testGroup "blargg" [
+    paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
+  , paletteRam
   ]
 
-testOne :: TestTree
-testOne = testCase "one" $
-  assertBool "Equals" True
+paletteRam :: TestTree
+paletteRam = testCase "palette_ram" $
+  runStuff
 
-testTwo :: TestTree
-testTwo = testCase "two" $
-  assertBool "Equals" True
+runStuff :: IO ()
+runStuff = do
+  rom <- BS.readFile "roms/tests/ppu/blargg/palette_ram.nes"
+  runIOEmulator rom stepFrame

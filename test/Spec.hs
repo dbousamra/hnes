@@ -9,7 +9,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "blargg" [
+tests = testGroup "tests" [
     Nestest.test
   , Blargg.test
   ]
