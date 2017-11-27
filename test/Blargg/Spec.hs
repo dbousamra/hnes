@@ -8,7 +8,7 @@ import           Test.Tasty
 import           Test.Tasty.HUnit
 
 test :: TestTree
-test = testGroup "blargg" [
+test = testGroup "blargg ppu" [
     paletteRam
   , powerUpPalette
   , spriteRam
