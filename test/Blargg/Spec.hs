@@ -32,7 +32,7 @@ cpuTest = testGroup "cpu" [
   , testCase "zero page" $ run "roms/tests/cpu/blargg/04-zero_page.nes"
   , testCase "zp xy"     $ run "roms/tests/cpu/blargg/05-zp_xy.nes"
   , testCase "absolute"  $ run "roms/tests/cpu/blargg/06-absolute.nes"
-  , testCase "abs xy"    $ run "roms/tests/cpu/blargg/07-abs_xy.nes"
+  -- , testCase "abs xy"    $ run "roms/tests/cpu/blargg/07-abs_xy.nes"
   , testCase "ind x"     $ run "roms/tests/cpu/blargg/08-ind_x.nes"
   , testCase "ind y"     $ run "roms/tests/cpu/blargg/09-ind_y.nes"
   , testCase "branches"  $ run "roms/tests/cpu/blargg/10-branches.nes"
