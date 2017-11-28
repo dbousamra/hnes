@@ -233,16 +233,16 @@ runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   RRA -> rra mode
   SLO -> slo mode
   SRE -> sre mode
-  ANC -> const $ illegal mnemonic
-  ALR -> const $ illegal mnemonic
-  ARR -> const $ illegal mnemonic
+  ANC -> anc
+  ALR -> alr
+  ARR -> arr
   XAA -> const $ illegal mnemonic
   AHX -> const $ illegal mnemonic
   TAS -> const $ illegal mnemonic
   SHX -> const $ illegal mnemonic
   SHY -> const $ illegal mnemonic
   LAS -> const $ illegal mnemonic
-  AXS -> const $ illegal mnemonic
+  AXS -> axs
 
 -- Official instructions
 
@@ -643,6 +643,55 @@ tya = do
   setZN av
 
 -- Illegal instructions:
+-- See: http://www.ffd2.com/fridge/docs/6502-NMOS.extra.opcodes
+
+-- ALR/ASR - This opcode ANDs the contents of the A register with an immediate value and
+-- then LSRs the result.
+alr :: Word16 -> IOEmulator ()
+alr addr = do
+  and addr
+  lsr Accumulator addr
+
+-- ANC/AAC - ANC ANDs the contents of the A register with an immediate value and then
+-- moves bit 7 of A into the Carry flag.  This opcode works basically
+-- identically to AND #immed. except that the Carry flag is set to the same
+-- state that the Negative flag is set to.
+anc :: Word16 -> IOEmulator ()
+anc addr = do
+  av <- load $ Cpu A
+  v <- load $ Cpu $ CpuMemory8 addr
+  store (Cpu A) (av .&. v)
+  av' <- load $ Cpu A
+  setZN av'
+  z <- getFlag Negative
+  setFlag Carry z
+
+-- ARR - This opcode ANDs the contents of the A register with an immediate value and
+-- then RORs the result.
+arr :: Word16 -> IOEmulator ()
+arr addr = do
+  and addr
+  ror Accumulator addr
+  a <- load $ Cpu A
+  let bit5 = (a `shiftR` 5) .&. 0x1 == 1
+  let bit6 = (a `shiftR` 6) .&. 0x1 == 1
+  setFlag Carry bit6
+  setFlag Overflow (bit6 `xor` bit5)
+
+-- AXS - AXS ANDs the contents of the A and X registers (without changing the
+-- contents of either register) and stores the result in memory.
+-- AXS does not affect any flags in the processor status register.
+-- See
+axs :: Word16 -> IOEmulator ()
+axs addr = do
+  av <- load $ Cpu A
+  xv <- load $ Cpu X
+  v <- load (Cpu $ CpuMemory8 addr)
+  let anded = av .&. xv
+  let newXv = anded - v
+  store (Cpu X) newXv
+  setFlag Carry (anded >= v)
+  setZN newXv
 
 -- LAX - Load Accumulator and X with memory
 lax :: Word16 -> IOEmulator ()
