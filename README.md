@@ -3,19 +3,24 @@
 Welcome to hnes. hnes is a NES emulator written in Haskell.
 
 # Task list
-
 - [x] Basic structure
-- [x] Loading roms
-- [x] Mapper 2
-- [x] Nestest
-- [x] 100% CPU accuracy
-- [x] SDL integration
-- [x] Background rendering
-- [x] Scrolling
+- [ ] Mappers
+  - [x] Loading roms
+  - [x] UNROM/Mapper 2
+  - [ ] More mappers
+- [ ] CPU
+  - [x] All official opcodes
+  - [ ] All illegal opcodes
+  - [x] Nestest passing
+  - [ ] Blarggs CPU test roms passing
+- [ ] PPU
+  - [x] SDL integration
+  - [x] Background rendering
+  - [x] Scrolling
+  - [ ] Sprite rendering
 - [x] Controller input handled
-- [ ] Sprite rendering
 - [x] Performance tuning
-- [ ] More mappers
+
 
 # Screenshots
 
