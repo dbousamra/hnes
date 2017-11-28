@@ -14,8 +14,8 @@ import           Text.Parsec            (parse)
 
 test :: TestTree
 test = testCase "nestest" $ do
-  rom <- BS.readFile "roms/tests/cpu/nestest.nes"
-  lines <- lines <$> readFile "roms/tests/cpu/nestest.log"
+  rom <- BS.readFile "roms/tests/cpu/nestest/nestest.nes"
+  lines <- lines <$> readFile "roms/tests/cpu/nestest/nestest.log"
   runIOEmulator rom $ do
     store (Cpu Pc) 0xC000
     emulate lines

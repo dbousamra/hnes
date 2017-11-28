@@ -315,7 +315,7 @@ bvs = branch $ getFlag Overflow
 brk :: IOEmulator ()
 brk = do
   pcv <- load $ Cpu Pc
-  push16 pcv
+  push16 $ pcv + 1
   php
   sei
   av <- load (Cpu $ CpuMemory16 0xFFFE)
@@ -772,9 +772,8 @@ compare a b = do
   setFlag Carry (a >= b)
 
 illegal :: Mnemonic -> IOEmulator ()
-illegal mnem = do
-  liftIO $ putStrLn ("illegal opcode used " ++ show mnem)
-  pure ()
+illegal mnem = pure ()
+  -- liftIO $ putStrLn ("illegal opcode used " ++ show mnem)
 
 addCycles :: Int -> IOEmulator ()
 addCycles n = modify (Cpu CpuCycles) (+ n)

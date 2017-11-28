@@ -66,7 +66,7 @@ parse bs = do
   pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1
 
 read :: Cartridge -> Word16 -> IO Word8
-read (Cartridge chr prg _ _ _ prgBank1 prgBank2 _) addr
+read (Cartridge chr prg sram _ _ prgBank1 prgBank2 _) addr
   | addr' <  0x2000 = VUM.unsafeRead chr addr'
   | addr' >= 0xC000 = do
     prgBank2V <- readIORef prgBank2
@@ -74,7 +74,7 @@ read (Cartridge chr prg _ _ _ prgBank1 prgBank2 _) addr
   | addr' >= 0x8000 = do
     prgBank1V <- readIORef prgBank1
     VUM.unsafeRead prg ((prgBank1V * 0x4000) + (addr' - 0x8000))
-  | addr' >= 0x6000 = VUM.unsafeRead prg (addr' - 0x6000)
+  | addr' >= 0x6000 = VUM.unsafeRead sram (addr' - 0x6000)
   | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 
