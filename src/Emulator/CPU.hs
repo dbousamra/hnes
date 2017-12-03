@@ -239,8 +239,8 @@ runInstruction (Opcode _ mnemonic mode _ _ _) = case mnemonic of
   XAA -> const $ illegal mnemonic
   AHX -> const $ illegal mnemonic
   TAS -> const $ illegal mnemonic
-  SHX -> const $ illegal mnemonic
-  SHY -> const $ illegal mnemonic
+  SHX -> shx
+  SHY -> shy
   LAS -> const $ illegal mnemonic
   AXS -> axs
 
@@ -736,6 +736,25 @@ sre mode addr = lsr mode addr >> eor addr
 -- the Accumulator
 rra :: AddressMode -> Word16 -> IOEmulator ()
 rra mode addr = ror mode addr >> adc addr
+
+shx :: Word16 -> IOEmulator ()
+shx addr = do
+  xv <- load (Cpu X)
+  yv <- load (Cpu Y)
+  -- let (lo, hi) = splitW16 addr
+  let result = (xv .&. ((toWord8 addr) + 1))
+  let temp = (toWord8 addr - yv) .&. 0xFF
+  if (yv + temp <= 0xFF) then
+    store (Cpu $ CpuMemory8 addr) result
+  else do
+    v <- load (Cpu $ CpuMemory8 addr)
+    store (Cpu $ CpuMemory8 addr) v
+
+
+shy :: Word16 -> IOEmulator ()
+shy addr = do
+  pure ()
+
 
 -- NMI - Non Maskable Interrupt. Not strictly an opcode, but can represented as one
 nmi :: IOEmulator ()
