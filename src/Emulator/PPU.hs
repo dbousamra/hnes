@@ -86,11 +86,25 @@ handleLinePhase scanline cycle = do
 renderPixel :: Int -> Int -> IOEmulator ()
 renderPixel scanline cycle = do
   let coords = getScrollingCoords scanline cycle
-  color <- getBackgroundPixel coords
-  i <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral color)
-  let index' = i `mod` 64
-  let c = getPaletteColor index'
-  store (Ppu $ Screen coords) c
+  bgColor <- getBackgroundPixel coords
+  spriteColor <- pure 0
+  finalColor <- getComposedColor bgColor spriteColor
+  store (Ppu $ Screen coords) finalColor
+
+getComposedColor :: Word8 -> Word8 -> IOEmulator Color
+getComposedColor bg sprite = do
+  index <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral color)
+  pure $ getPaletteColor (index `mod` 64)
+  where
+    b = bg `mod` 4 /= 0
+    s = sprite `mod` 4 /= 0
+    color =
+      if not b && not s then
+        0
+      else if not b && s then
+        sprite .|. 0x10
+      else
+        bg
 
 getBackgroundPixel :: Coords -> IOEmulator Word8
 getBackgroundPixel coords = do
