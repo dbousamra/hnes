@@ -84,6 +84,7 @@ data PPU = PPU {
   screen                :: VUM.IOVector Word8,
   -- Addresses
   currentVramAddress    :: IORef Word16,
+  tempVramAddress       :: IORef Word16,
   oamAddress            :: IORef Word8,
   -- Control register bits
   nameTable             :: IORef Word16,
@@ -137,6 +138,7 @@ data Ppu a where
   FrameCount :: Ppu Int
   NameTableAddr :: Ppu Word16
   CurrentVRamAddr :: Ppu Word16
+  TempVRamAddr :: Ppu Word16
   BackgroundTableAddr :: Ppu Word16
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
@@ -276,6 +278,7 @@ newPPU = do
   screen <- VUM.replicate (256 * 240 * 3) 255
   -- Addresses
   currentVramAddress <- newIORef 0x0
+  tempVramAddress <- newIORef 0x0
   oamAddress <- newIORef 0x0
   -- Control register
   nameTable <- newIORef 0x2000
@@ -315,7 +318,7 @@ newPPU = do
     -- Data
     oamData nameTableData paletteData screen
     -- Addresses
-    currentVramAddress oamAddress
+    currentVramAddress tempVramAddress oamAddress
     -- Control register
     nameTable incrementMode spriteTable bgTable spriteSize nmiEnabled
     -- Mask register
@@ -336,6 +339,7 @@ readPPU nes addr = case addr of
   PpuCycles           -> readIORef $ ppuCycles $ ppu nes
   NameTableAddr       -> readIORef $ nameTable $ ppu nes
   CurrentVRamAddr     -> readIORef $ currentVramAddress $ ppu nes
+  TempVRamAddr        -> readIORef $ tempVramAddress $ ppu nes
   Scanline            -> readIORef $ scanline $ ppu nes
   FrameCount          -> readIORef $ frameCount $ ppu nes
   VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
@@ -361,6 +365,7 @@ writePPU ppu addr v = case addr of
   Scanline        -> modifyIORef' (scanline ppu) (const v)
   FrameCount      -> modifyIORef' (frameCount ppu) (const v)
   CurrentVRamAddr -> modifyIORef' (currentVramAddress ppu) (const v)
+  TempVRamAddr    -> modifyIORef' (tempVramAddress ppu) (const v)
   VerticalBlank   -> modifyIORef' (verticalBlank ppu) (const v)
   NameTableByte   -> modifyIORef' (nameTableByte ppu) (const v)
   AttrTableByte   -> modifyIORef' (attrTableByte ppu) (const v)
@@ -456,6 +461,8 @@ writeControl ppu v = do
   modifyIORef' (bgTable ppu) $ const $ if testBit v 4 then 0x1000 else 0x0000
   modifyIORef' (spriteSize ppu) $ const $ if testBit v 5 then Double else Normal
   modifyIORef' (nmiEnabled ppu) $ const $ testBit v 7
+  tv <- readIORef (tempVramAddress ppu)
+  modifyIORef' (tempVramAddress ppu) $ const ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `shiftL` 10)
 
 writeMask :: PPU -> Word8 -> IO ()
 writeMask ppu v = do

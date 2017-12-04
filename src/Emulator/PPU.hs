@@ -85,9 +85,9 @@ handleLinePhase scanline cycle = do
 
 renderPixel :: Int -> Int -> IOEmulator ()
 renderPixel scanline cycle = do
-  let coords = getScrollingCoords scanline cycle
+  let coords = (cycle - 1, scanline)
+  let spriteColor = 0
   bgColor <- getBackgroundPixel coords
-  spriteColor <- pure 0
   finalColor <- getComposedColor bgColor spriteColor
   store (Ppu $ Screen coords) finalColor
 
@@ -109,8 +109,7 @@ getComposedColor bg sprite = do
 getBackgroundPixel :: Coords -> IOEmulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
-  let shifted = tileData `shiftR` (7 * 4)
-  pure $ fromIntegral $ shifted .&. 0x0F
+  pure $ fromIntegral $ (tileData `shiftR` (7 * 4)) .&. 0x0F
 
 readPalette :: Word16 -> IOEmulator Word8
 readPalette addr = load $ Ppu $ PaletteData addr'
@@ -186,10 +185,16 @@ storeTileData = do
   modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
 
 copyY :: IOEmulator ()
-copyY = modify (Ppu CurrentVRamAddr) (.&. 0x841F)
+copyY = do
+  tv <- load (Ppu TempVRamAddr)
+  cv <- load (Ppu CurrentVRamAddr)
+  store (Ppu CurrentVRamAddr) ((cv .&. 0x841F) .|. (tv .&. 0x7BE0))
 
 copyX :: IOEmulator ()
-copyX = modify (Ppu CurrentVRamAddr) (.&. 0xFBE0)
+copyX = do
+  tv <- load (Ppu TempVRamAddr)
+  cv <- load (Ppu CurrentVRamAddr)
+  store (Ppu CurrentVRamAddr) ((cv .&. 0xFBE0) .|. (tv .&. 0x041F))
 
 incrementX :: IOEmulator ()
 incrementX = do
@@ -219,10 +224,6 @@ incrementY = do
     v' <- load $ Ppu CurrentVRamAddr
     store (Ppu CurrentVRamAddr) ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
 
-
-getScrollingCoords :: Int -> Int -> Coords
-getScrollingCoords scanline cycle = (cycle - 1, scanline)
-
 enterVBlank :: IOEmulator ()
 enterVBlank = do
   store (Ppu VerticalBlank) True
@@ -236,7 +237,7 @@ idle :: IOEmulator ()
 idle = pure ()
 
 getPaletteColor :: Word8 -> Color
-getPaletteColor index = palette V.! (fromIntegral index)
+getPaletteColor index = palette V.! fromIntegral index
 
 palette :: V.Vector Color
 palette = V.fromList
