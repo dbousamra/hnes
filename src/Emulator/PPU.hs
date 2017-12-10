@@ -6,6 +6,7 @@ module Emulator.PPU (
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Bits              (shiftL, shiftR, xor, (.&.), (.|.))
+import           Data.Char              (toLower)
 import           Data.IORef
 import           Data.Maybe             (fromJust, isJust)
 import qualified Data.Vector            as V
@@ -14,7 +15,6 @@ import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Util
 import           Prelude                hiding (cycle)
-import           System.Exit
 
 reset :: IOEmulator ()
 reset = do
@@ -41,9 +41,34 @@ tick = do
       store (Ppu Scanline) 0
       modify (Ppu FrameCount) (+1)
 
-  scanline <- load $ Ppu Scanline
-  cycle <- load $ Ppu PpuCycles
-  pure (scanline, cycles)
+  scanline' <- load $ Ppu Scanline
+  cycles' <- load $ Ppu PpuCycles
+  pure (scanline', cycles')
+
+-- tick :: IOEmulator Coords
+-- tick = do
+--   cycles <- load $ Ppu PpuCycles
+--   scanline <- load $ Ppu Scanline
+
+--   if (scanline == 261 && cycles == 339) then do
+--     store (Ppu PpuCycles) 0
+--     store (Ppu Scanline) 0
+--     modify (Ppu FrameCount) (+1)
+--   else do
+--     modify (Ppu PpuCycles) (+1)
+
+--     when (cycles > 340) $ do
+--       store (Ppu PpuCycles) 0
+--       modify (Ppu Scanline) (+1)
+--       scanline <- load (Ppu Scanline)
+
+--       when (scanline > 261) $ do
+--         store (Ppu Scanline) 0
+--         modify (Ppu FrameCount) (+1)
+
+--   scanline' <- load $ Ppu Scanline
+--   cycles' <- load $ Ppu PpuCycles
+--   pure (scanline', cycles')
 
 handleLinePhase :: Int -> Int -> IOEmulator ()
 handleLinePhase scanline cycle = do
@@ -55,9 +80,12 @@ handleLinePhase scanline cycle = do
   let preFetchCycle = cycle >= 321 && cycle <= 336
   let fetchCycle = visibleCycle || (cycle >= 321 && cycle <= 336)
 
-  renderBg <- load (Ppu BackgroundVisible)
-  when renderBg $ do
+  bgVisible <- load (Ppu BackgroundVisible)
+  spritesVisible <- load (Ppu SpritesVisible)
 
+  let rendering = bgVisible || spritesVisible
+
+  when rendering $ do
     when (visibleLine && visibleCycle) $
       renderPixel scanline cycle
 
@@ -77,6 +105,12 @@ handleLinePhase scanline cycle = do
       when (cycle == 257)
         copyX
 
+    when (cycle == 257) $
+      if visibleLine then
+        evaluateSprites scanline
+      else
+        pure ()
+
   when (scanline == 241 && cycle == 1) $
     enterVBlank
 
@@ -86,10 +120,22 @@ handleLinePhase scanline cycle = do
 renderPixel :: Int -> Int -> IOEmulator ()
 renderPixel scanline cycle = do
   let coords = (cycle - 1, scanline)
-  let spriteColor = 0
   bgColor <- getBackgroundPixel coords
+  spriteColor <- getSpritePixel coords
   finalColor <- getComposedColor bgColor spriteColor
   store (Ppu $ Screen coords) finalColor
+
+getBackgroundPixel :: Coords -> IOEmulator Word8
+getBackgroundPixel coords = do
+  tileData <- fetchTileData
+  pure $ fromIntegral $ (tileData `shiftR` (7 * 4)) .&. 0x0F
+
+getSpritePixel :: Coords -> IOEmulator Word8
+getSpritePixel coords = do
+  sprites <- load (Ppu Sprites)
+  let vis = sCoords <$> sprites
+  let hit = V.any (\x -> x == coords) vis
+  pure $ if hit then 10 else 0
 
 getComposedColor :: Word8 -> Word8 -> IOEmulator Color
 getComposedColor bg sprite = do
@@ -102,14 +148,11 @@ getComposedColor bg sprite = do
       if not b && not s then
         0
       else if not b && s then
-        sprite .|. 0x10
-      else
+        sprite .|. 0
+      else if b && not s then
         bg
-
-getBackgroundPixel :: Coords -> IOEmulator Word8
-getBackgroundPixel coords = do
-  tileData <- fetchTileData
-  pure $ fromIntegral $ (tileData `shiftR` (7 * 4)) .&. 0x0F
+      else
+        sprite .|. 0x10
 
 readPalette :: Word16 -> IOEmulator Word8
 readPalette addr = load $ Ppu $ PaletteData addr'
@@ -223,6 +266,30 @@ incrementY = do
 
     v' <- load $ Ppu CurrentVRamAddr
     store (Ppu CurrentVRamAddr) ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
+
+getSpriteAt :: Int -> IOEmulator Sprite
+getSpriteAt i = do
+  let baseOffset = fromIntegral $ i * 4
+  y <- load (Ppu $ OamData $ baseOffset + 0)
+  tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
+  attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
+  x <- load (Ppu $ OamData $ baseOffset + 3)
+  pure $ Sprite i (fromIntegral x, fromIntegral $ y) tileIndexByte attributeByte
+
+evaluateSprites :: Int -> IOEmulator ()
+evaluateSprites scanline = do
+  spriteSize <- load $ Ppu SpriteSize
+  sprites <- traverse getSpriteAt (V.fromList [0..63])
+  let visibleSprites = V.take 8 $ V.filter (isSpriteVisible scanline spriteSize) sprites
+  store (Ppu Sprites) visibleSprites
+
+isSpriteVisible :: Int -> SpriteSize -> Sprite -> Bool
+isSpriteVisible scanline spriteSize (Sprite i (x, y) _ _) = row < 0 || row >= h
+  where
+    row = scanline - y
+    h = case spriteSize of
+          Normal -> 8
+          Double -> 16
 
 enterVBlank :: IOEmulator ()
 enterVBlank = do

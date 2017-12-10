@@ -3,6 +3,7 @@
 
 module Emulator.Nes (
     Nes(..)
+  , Sprite(..)
   , Coords
   , Color
   , Flag(..)
@@ -24,6 +25,7 @@ import           Control.Monad
 import           Control.Monad.ST
 import           Data.Bits                    (shiftL, shiftR, testBit, (.&.), (.|.))
 import           Data.IORef
+import qualified Data.Vector                  as V
 import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
@@ -32,6 +34,13 @@ import qualified Emulator.Controller          as Controller
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
 import           System.Random
+
+data Sprite = Sprite {
+  sIndex         :: Int,
+  sCoords        :: Coords,
+  sTileIndexByte :: Word8,
+  sAttributeByte :: Word8
+} deriving (Show, Eq)
 
 type Coords = (Int, Int)
 
@@ -98,7 +107,7 @@ data PPU = PPU {
   leftBgVisibility      :: IORef Visibility,
   leftSpritesVisibility :: IORef Visibility,
   bgVisibility          :: IORef Bool,
-  spriteVisibility      :: IORef Visibility,
+  spriteVisibility      :: IORef Bool,
   intensifyReds         :: IORef Bool,
   intensifyGreens       :: IORef Bool,
   intensifyBlues        :: IORef Bool,
@@ -116,7 +125,8 @@ data PPU = PPU {
   attrTableByte         :: IORef Word8,
   loTileByte            :: IORef Word8,
   hiTileByte            :: IORef Word8,
-  tileData              :: IORef Word64
+  tileData              :: IORef Word64,
+  sprites               :: IORef (V.Vector Sprite)
 }
 
 -- GADTs are used to represent addressing
@@ -150,9 +160,11 @@ data Ppu a where
   HiTileByte :: Ppu Word8
   SpriteSize :: Ppu SpriteSize
   BackgroundVisible :: Ppu Bool
+  SpritesVisible :: Ppu Bool
   TileData :: Ppu Word64
   PaletteData :: Word16 -> Ppu Word8
   OamData :: Word16 -> Ppu Word8
+  Sprites :: Ppu (V.Vector Sprite)
   PpuMemory8 :: Word16 -> Ppu Word8
   PpuMemory16 :: Word16 -> Ppu Word16
   Screen :: Coords -> Ppu Color
@@ -251,7 +263,8 @@ readCpuMemory16 nes addr = do
 writeCpuMemory8 :: Nes -> Word16 -> Word8 -> IO ()
 writeCpuMemory8 nes addr v
   | addr < 0x2000 = VUM.unsafeWrite (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
-  | addr < 0x4000 = writePPURegister nes addr v
+  | addr < 0x4000 = writePPURegister nes (0x2000 + addr `mod` 8) v
+  | addr == 0x4014 = writePPURegister nes addr v
   | addr == 0x4016 = Controller.write (controller nes) v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = error "APU write not implemented"
@@ -291,8 +304,8 @@ newPPU = do
   colorMode <- newIORef Color
   leftBgVis <- newIORef Hidden
   leftSpritesVis <- newIORef Hidden
-  bgVis <- newIORef True
-  spriteVis <- newIORef Hidden
+  bgVis <- newIORef False
+  spriteVis <- newIORef False
   intensifyReds <- newIORef False
   intensifyGreens <- newIORef False
   intensifyBlues <- newIORef False
@@ -311,6 +324,7 @@ newPPU = do
   loTileByte <- newIORef 0x0
   hiTileByte <- newIORef 0x0
   tileData <- newIORef 0x0
+  sprites <- newIORef V.empty
 
   pure $ PPU
     -- Misc
@@ -331,7 +345,7 @@ newPPU = do
     -- Data register
     dataV
     -- Temp vars
-    nameTableByte attrTableByte loTileByte hiTileByte tileData
+    nameTableByte attrTableByte loTileByte hiTileByte tileData sprites
 
 
 readPPU :: Nes -> Ppu a -> IO a
@@ -349,10 +363,12 @@ readPPU nes addr = case addr of
   ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
   NameTableByte       -> readIORef $ nameTableByte $ ppu nes
   BackgroundVisible   -> readIORef $ bgVisibility $ ppu nes
+  SpritesVisible      -> readIORef $ spriteVisibility $ ppu nes
   AttrTableByte       -> readIORef $ attrTableByte $ ppu nes
   LoTileByte          -> readIORef $ loTileByte $ ppu nes
   HiTileByte          -> readIORef $ hiTileByte $ ppu nes
   TileData            -> readIORef $ tileData $ ppu nes
+  Sprites             -> readIORef $ sprites $ ppu nes
   SpriteSize          -> readIORef $ spriteSize $ ppu nes
   OamData addr        -> readOAMData' (ppu nes) addr
   PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral i)
@@ -372,6 +388,7 @@ writePPU ppu addr v = case addr of
   LoTileByte      -> modifyIORef' (loTileByte ppu) (const v)
   HiTileByte      -> modifyIORef' (hiTileByte ppu) (const v)
   TileData        -> modifyIORef' (tileData ppu) (const v)
+  Sprites         -> modifyIORef' (sprites ppu) (const v)
   Screen coords   -> do
     let (r, g, b) = v
     let offset = fromIntegral $ translateXY coords 256 * 3
@@ -439,7 +456,7 @@ readData nes = do
   pure rv
 
 writePPURegister :: Nes -> Word16 -> Word8 -> IO ()
-writePPURegister nes addr v = case 0x2000 + addr `mod` 8 of
+writePPURegister nes addr v = case addr of
   0x2000 -> writeControl (ppu nes) v
   0x2001 -> writeMask (ppu nes) v
   0x2003 -> writeOAMAddress (ppu nes) v
@@ -470,7 +487,7 @@ writeMask ppu v = do
   modifyIORef' (leftBgVisibility ppu) $ const $ if testBit v 1 then Shown else Hidden
   modifyIORef' (leftSpritesVisibility ppu) $ const $ if testBit v 2 then Shown else Hidden
   modifyIORef' (bgVisibility ppu) $ const $ testBit v 3
-  modifyIORef' (spriteVisibility ppu) $ const $ if testBit v 4 then Shown else Hidden
+  modifyIORef' (spriteVisibility ppu) $ const $ testBit v 4
   modifyIORef' (intensifyReds ppu) $ const $ testBit v 5
   modifyIORef' (intensifyGreens ppu) $ const $ testBit v 6
   modifyIORef' (intensifyBlues ppu) $ const $ testBit v 7
@@ -499,17 +516,13 @@ writeAddress ppu v = do
 
 writeDMA :: Nes -> Word8 -> IO ()
 writeDMA nes v = do
-  let startingAddr = toWord8 $ toWord16 v `shiftL` 8
-  write nes 0 startingAddr
-  where
-    write :: Nes -> Int -> Word8 -> IO ()
-    write nes i addr =
-      when (i < 255) $ do
-        oamA <- readIORef $ oamAddress (ppu nes)
-        oamV <- readCpuMemory8 nes (toWord16 addr)
-        VUM.unsafeWrite (oamData $ ppu nes) (toInt oamA) oamV
-        modifyIORef' (oamAddress (ppu nes)) (+ 1)
-        write nes (i + 1) (addr + 1)
+  let startingAddr = (toWord16 v) `shiftL` 8
+  let addresses = fmap (+ startingAddr) [0..255]
+  forM_ addresses (\addr -> do
+    oamA <- readIORef $ oamAddress (ppu nes)
+    oamV <- readCpuMemory8 nes addr
+    VUM.unsafeWrite (oamData $ ppu nes) (toInt oamA) oamV
+    modifyIORef' (oamAddress (ppu nes)) (+ 1))
 
 writeData :: Nes -> Word8 -> IO ()
 writeData nes v = do

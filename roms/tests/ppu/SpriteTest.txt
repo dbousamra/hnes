@@ -1,0 +1,28 @@
+SpriteTest 1.0
+==============
+
+This is a very simple test-ROM for NES aimed at emulator-developers to test their sprites.
+This ROM is tested on actual hardware (PAL NES) and works.
+
+Usage
+=====
+When starting this ROM you hopefully see two sprites in the center of the screen ("01"). They
+have the same tile-ID's as displayed on screen.
+
+Press SELECT to switch between 8x8/8x16 spritemode.
+Press B to set horizontal-flip mode
+Press A to set vertical-flip mode
+Press D-Pad to move the sprites around (just for fun? :))
+
+Yellow sprites indicates that they're fetched from patterntable 0. When they turn green
+(8x16 mode) they're fetched from patterntable 1.
+
+
+Author
+======
+Morgan Johansson (morjoh@live.se)
+
+
+History
+=======
+v1.0	2016-03-02	- First release
