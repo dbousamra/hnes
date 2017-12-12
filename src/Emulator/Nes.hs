@@ -246,7 +246,7 @@ readCPU nes addr = case addr of
 
 readCpuMemory8 :: Nes -> Word16 -> IO Word8
 readCpuMemory8 nes addr
-  | addr < 0x2000 = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
+  | addr < 0x2000 = readCPURam nes addr
   | addr < 0x4000 = readPPURegister nes addr
   | addr == 0x4016 = Controller.read $ controller nes
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
@@ -276,6 +276,9 @@ writeCpuMemory16 nes addr v = do
   let (lo, hi) = splitW16 v
   writeCpuMemory8 nes addr lo
   writeCpuMemory8 nes (addr + 1) hi
+
+readCPURam :: Nes -> Word16 -> IO Word8
+readCPURam nes addr = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
 
 newPPU :: IO PPU
 newPPU = do

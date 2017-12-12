@@ -136,6 +136,7 @@ getSpritePixel coords = do
   let vis = sCoords <$> sprites
   let hit = V.any (\x -> x == coords) vis
   pure $ if hit then 10 else 0
+  -- pure 0
 
 getComposedColor :: Word8 -> Word8 -> IOEmulator Color
 getComposedColor bg sprite = do
