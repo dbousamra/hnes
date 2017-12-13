@@ -24,6 +24,7 @@ import           Control.Monad
 import           Control.Monad.ST
 import           Data.Bits                    (shiftL, shiftR, testBit, (.&.), (.|.))
 import           Data.IORef
+import           Data.Set                     as Set
 import qualified Data.Vector                  as V
 import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU
@@ -32,7 +33,6 @@ import qualified Emulator.Cartridge           as Cartridge
 import qualified Emulator.Controller          as Controller
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
-import           System.Random
 
 data Sprite = Sprite {
   sIndex         :: Int,
@@ -172,7 +172,7 @@ data Ppu a where
 data Address a where
   Cpu :: Cpu a -> Address a
   Ppu :: Ppu a -> Address a
-  Keys :: Address [Controller.Key]
+  Keys :: Address (Set Controller.Key)
 
 data Flag
   = Negative
@@ -196,6 +196,7 @@ read :: Nes -> Address a -> IO a
 read nes addr = case addr of
   Cpu r -> readCPU nes r
   Ppu r -> readPPU nes r
+  Keys  -> readKeys nes
 
 write :: Nes -> Address a -> a -> IO ()
 write nes addr v = case addr of
@@ -547,8 +548,11 @@ mirroredPaletteAddr :: Word16 -> Word16
 mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
   where addr' = addr `mod` 32
 
-writeKeys :: Nes -> [Controller.Key] -> IO ()
+writeKeys :: Nes -> Set Controller.Key -> IO ()
 writeKeys = Controller.setKeysDown . controller
+
+readKeys :: Nes -> IO (Set Controller.Key)
+readKeys = Controller.readKeysDown . controller
 
 translateXY :: Coords -> Int -> Int
 translateXY (x, y) width = x + (y * width)

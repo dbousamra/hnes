@@ -19,16 +19,19 @@ import           Emulator.Nes           as Nes
 newtype IOEmulator a = IOEmulator { unNes :: ReaderT Nes IO a }
   deriving (Monad, Applicative, Functor, MonadIO)
 
+{-# INLINE load #-}
 load :: Nes.Address a -> IOEmulator a
 load address = IOEmulator $ do
   nes <- ask
   lift $ Nes.read nes address
 
+{-# INLINE store #-}
 store :: Nes.Address a -> a -> IOEmulator ()
 store address value = IOEmulator $ do
   nes <- ask
   lift $ Nes.write nes address value
 
+{-# INLINE modify #-}
 modify :: Address a -> (a -> a) -> IOEmulator ()
 modify addr f = do
   av <- load addr

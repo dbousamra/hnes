@@ -6,6 +6,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Data.Maybe             (catMaybes)
+import           Data.Set               as Set hiding (foldl)
 import qualified Data.Text              as T
 import           Emulator               (reset, stepFrame)
 import           Emulator.Controller    as Controller
@@ -39,8 +40,9 @@ main = do
 
 appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator ()
 appLoop lastTime frames renderer window = do
-  intents <- liftIO $ eventsToIntents <$> SDL.pollEvents
-  store Keys (intentsToKeys intents)
+  intents <- eventsToIntents <$> SDL.pollEvents
+  oldKeys <- load Keys
+  store Keys (intentsToKeys oldKeys intents)
   stepFrame
   texture <- render renderer
   copy renderer texture Nothing Nothing
@@ -49,7 +51,7 @@ appLoop lastTime frames renderer window = do
   time <- SDL.Time.time
   let diff = time - lastTime
 
-  if (diff > 1.0) then do
+  if diff > 1.0 then do
     let fps = round $ fromIntegral frames / diff
     (windowTitle window) $= (T.pack $ "FPS = " ++ show fps)
     unless (elem Exit intents) (appLoop time 0 renderer window)
@@ -65,31 +67,35 @@ render renderer = do
   SDL.freeSurface surface
   pure texture
 
-eventsToIntents :: [SDL.Event] -> [Intent]
-eventsToIntents events = catMaybes $ eventToIntent . SDL.eventPayload <$> events
+eventsToIntents :: [SDL.Event] -> Set Intent
+eventsToIntents events = Set.fromList $ catMaybes $ eventToIntent . SDL.eventPayload <$> events
   where
+    eventToIntent :: SDL.EventPayload -> Maybe Intent
     eventToIntent SDL.QuitEvent = Just Exit
     eventToIntent (SDL.KeyboardEvent k) = case k of
-      (SDL.KeyboardEventData _ SDL.Pressed _ keysym) ->
+      (SDL.KeyboardEventData _ motion _ keysym) -> do
+        let c = case motion of
+              SDL.Pressed  -> KeyPress
+              SDL.Released -> KeyRelease
         case SDL.keysymKeycode keysym of
           SDL.KeycodeQ      -> Just Exit
-          SDL.KeycodeZ      -> Just (KeyPress Controller.A)
-          SDL.KeycodeX      -> Just (KeyPress Controller.B)
-          SDL.KeycodeUp     -> Just (KeyPress Controller.Up)
-          SDL.KeycodeDown   -> Just (KeyPress Controller.Down)
-          SDL.KeycodeLeft   -> Just (KeyPress Controller.Left)
-          SDL.KeycodeRight  -> Just (KeyPress Controller.Right)
-          SDL.KeycodeSpace  -> Just (KeyPress Controller.Select)
-          SDL.KeycodeReturn -> Just (KeyPress Controller.Start)
+          SDL.KeycodeZ      -> Just (c Controller.A)
+          SDL.KeycodeX      -> Just (c Controller.B)
+          SDL.KeycodeUp     -> Just (c Controller.Up)
+          SDL.KeycodeDown   -> Just (c Controller.Down)
+          SDL.KeycodeLeft   -> Just (c Controller.Left)
+          SDL.KeycodeRight  -> Just (c Controller.Right)
+          SDL.KeycodeSpace  -> Just (c Controller.Select)
+          SDL.KeycodeReturn -> Just (c Controller.Start)
           _                 -> Nothing
-      _ -> Nothing
     eventToIntent _ = Nothing
 
-intentsToKeys :: [Intent] -> [Controller.Key]
-intentsToKeys = catMaybes . fmap (\x -> case x of
-    KeyPress a -> Just a
-    _          -> Nothing
-  )
+intentsToKeys :: Set Controller.Key -> Set Intent -> Set Controller.Key
+intentsToKeys = foldl op
+  where op keys intent = case intent of
+          KeyPress key   -> Set.insert key keys
+          KeyRelease key -> Set.delete key keys
+          Exit           -> keys
 
 scale :: Int
 scale = 3
@@ -103,4 +109,5 @@ height = 240
 data Intent
   = Exit
   | KeyPress Controller.Key
-  deriving (Eq, Show)
+  | KeyRelease Controller.Key
+  deriving (Eq, Show, Ord)

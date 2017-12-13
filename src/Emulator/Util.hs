@@ -8,12 +8,13 @@ module Emulator.Util (
   , firstNibble
   , splitW16
   , sliceBS
-  , ifM
-  , findM
+  , catMaybesV
 ) where
 
 import           Data.Bits        (shiftL, shiftR, (.&.), (.|.))
 import qualified Data.ByteString  as BS
+import           Data.Maybe       (fromJust, isJust)
+import           Data.Vector      as V
 import           Data.Word        (Word16, Word8)
 import           System.IO.Unsafe (unsafePerformIO)
 import           Text.Printf      (printf)
@@ -45,11 +46,7 @@ firstNibble = toWord16 . fst . splitW16
 sliceBS :: Int -> Int -> BS.ByteString -> BS.ByteString
 sliceBS from to xs = BS.take (to - from) (BS.drop from xs)
 
-ifM :: Monad m => m Bool -> m a -> m a -> m a
-ifM b t f = do b <- b; if b then t else f
-
-findM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
-findM p []     = return Nothing
-findM p (x:xs) = ifM (p x) (return $ Just x) (findM p xs)
+catMaybesV :: Vector (Maybe a) -> Vector a
+catMaybesV = (V.map fromJust) . (V.filter isJust)
 
 

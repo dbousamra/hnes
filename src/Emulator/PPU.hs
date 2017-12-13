@@ -45,31 +45,6 @@ tick = do
   cycles' <- load $ Ppu PpuCycles
   pure (scanline', cycles')
 
--- tick :: IOEmulator Coords
--- tick = do
---   cycles <- load $ Ppu PpuCycles
---   scanline <- load $ Ppu Scanline
-
---   if (scanline == 261 && cycles == 339) then do
---     store (Ppu PpuCycles) 0
---     store (Ppu Scanline) 0
---     modify (Ppu FrameCount) (+1)
---   else do
---     modify (Ppu PpuCycles) (+1)
-
---     when (cycles > 340) $ do
---       store (Ppu PpuCycles) 0
---       modify (Ppu Scanline) (+1)
---       scanline <- load (Ppu Scanline)
-
---       when (scanline > 261) $ do
---         store (Ppu Scanline) 0
---         modify (Ppu FrameCount) (+1)
-
---   scanline' <- load $ Ppu Scanline
---   cycles' <- load $ Ppu PpuCycles
---   pure (scanline', cycles')
-
 handleLinePhase :: Int -> Int -> IOEmulator ()
 handleLinePhase scanline cycle = do
   let preLine = scanline == 261
@@ -106,10 +81,8 @@ handleLinePhase scanline cycle = do
         copyX
 
     when (cycle == 257) $
-      if visibleLine then
+      when visibleLine $
         evaluateSprites scanline
-      else
-        pure ()
 
   when (scanline == 241 && cycle == 1) $
     enterVBlank
@@ -128,7 +101,7 @@ renderPixel scanline cycle = do
 getBackgroundPixel :: Coords -> IOEmulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
-  pure $ fromIntegral $ (tileData `shiftR` (7 * 4)) .&. 0x0F -- TODO: FIX?
+  pure $ fromIntegral $ (tileData `shiftR` 28) .&. 0x0F -- TODO: FIX?
 
 getSpritePixel :: Coords -> IOEmulator Word8
 getSpritePixel coords = do
@@ -155,16 +128,15 @@ getComposedColor bg sprite = do
   where
     b = bg `mod` 4 /= 0
     s = sprite `mod` 4 /= 0
-    color =  sprite .|. 0x10
-    -- color =
-    --   if not b && not s then
-    --     0
-    --   else if not b && s then
-    --     sprite .|. 0x10
-    --   else if b && not s then
-    --     bg
-    --   else
-    --     sprite .|. 0x10
+    color =
+      if not b && not s then
+        0
+      else if not b && s then
+        sprite .|. 0x10
+      else if b && not s then
+        bg
+      else
+        sprite .|. 0x10
 
 readPalette :: Word16 -> IOEmulator Word8
 readPalette addr = load $ Ppu $ PaletteData addr'
@@ -229,12 +201,12 @@ storeTileData = do
   atv <- load $ Ppu AttrTableByte
 
   let tileData = do
-        i <- [0..7]
+        i <- V.fromList [0..7]
         let p1 = ((lotv `shiftL` i) .&. 0x80) `shiftR` 7
         let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
-        pure $ fromIntegral $ atv .|. p1 .|. p2 :: [Word32]
+        pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
 
-  let tileData' = foldl op 0 tileData
+  let tileData' = V.foldl op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
 
   modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
@@ -279,57 +251,67 @@ incrementY = do
     v' <- load $ Ppu CurrentVRamAddr
     store (Ppu CurrentVRamAddr) ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
 
-getSpriteAt :: Int -> SpriteSize -> Int -> IOEmulator Sprite
+evaluateSprites :: Int -> IOEmulator ()
+evaluateSprites scanline = do
+  spriteSize <- load $ Ppu SpriteSize
+  sprites <- traverse (getSpriteAt scanline spriteSize) (V.fromList [0..63])
+  let visibleSprites = V.take 8 (catMaybesV sprites)
+  store (Ppu Sprites) visibleSprites
+
+getSpriteAt :: Int -> SpriteSize -> Int -> IOEmulator (Maybe Sprite)
 getSpriteAt scanline size i = do
   let baseOffset = fromIntegral $ i * 4
   y <- load (Ppu $ OamData $ baseOffset + 0)
-  tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
-  attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
-  x <- load (Ppu $ OamData $ baseOffset + 3)
   let row =  scanline - fromIntegral y
-  addr <- getSpriteAddress row size attributeByte tileIndexByte
-  loTileByte <- load (Ppu $ PpuMemory8 addr)
-  hiTileByte <- load (Ppu $ PpuMemory8 $ addr + 8)
-  let spritePattern = decodeSpritePattern attributeByte loTileByte hiTileByte
-  pure $ Sprite i (fromIntegral x, fromIntegral $ y) tileIndexByte attributeByte spritePattern
+
+  if isSpriteVisible row size then do
+    tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
+    attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
+    x <- load (Ppu $ OamData $ baseOffset + 3)
+    addr <- getSpriteAddress row size attributeByte tileIndexByte
+    loTileByte <- load (Ppu $ PpuMemory8 addr)
+    hiTileByte <- load (Ppu $ PpuMemory8 $ addr + 8)
+    let spritePattern = decodeSpritePattern attributeByte loTileByte hiTileByte
+    pure $ Just $ Sprite i (fromIntegral x, fromIntegral $ y) tileIndexByte attributeByte spritePattern
+  else
+    pure $ Nothing
 
 decodeSpritePattern :: Word8 -> Word8 -> Word8 -> Word32
 decodeSpritePattern attr lo hi = tileData'
   where
   atv = (attr .&. 3) `shiftL` 2
   tileData = do
-    i <- [0..7]
-    let p1 = ((lo `shiftL` i) .&. 0x80) `shiftR` 7
-    let p2 = ((hi `shiftL` i) .&. 0x80) `shiftR` 6
-    pure $ fromIntegral $ atv .|. p1 .|. p2 :: [Word32]
-  tileData' = foldl op 0 tileData
+    i <- V.fromList [0..7]
+    let (p1, p2) = if attr .&. 0x40 == 0x40
+        then do
+          let p1 = ((lo `shiftR` i) .&. 0x1) `shiftL` 0
+          let p2 = ((hi `shiftR` i) .&. 0x1) `shiftL` 1
+          (p1, p2)
+        else do
+          let p1 = ((lo `shiftL` i) .&. 0x80) `shiftR` 7
+          let p2 = ((hi `shiftL` i) .&. 0x80) `shiftR` 6
+          (p1, p2)
+
+    pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
+  tileData' = V.foldl op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
 
 getSpriteAddress :: Int -> SpriteSize -> Word8 -> Word8 -> IOEmulator Word16
 getSpriteAddress row size attr tile = case size of
-  Double -> do
+  Normal -> do
     let row' = if attr .&. 0x80 == 0x80 then 7 - row else row
     table <- load (Ppu SpriteTableAddr)
     pure $ table + (fromIntegral tile) * 16 + (fromIntegral row')
-  Normal -> do
+  Double -> do
     let row' = if attr .&. 0x80 == 0x80 then 15 - row else row
     let table = tile .&. 1
     let tile' = tile .&. 0xFE
-    let (tile'', row'') = if (row' > 7) then (tile' + 1, row' - 8) else (tile, row')
-    pure $ (0x1000 * fromIntegral table) + (fromIntegral tile) * 16 + (fromIntegral row')
+    let (tile'', row'') = if (row' > 7) then (tile' + 1, row' - 8) else (tile', row')
+    pure $ (0x1000 * fromIntegral table) + (fromIntegral tile'') * 16 + (fromIntegral row'')
 
-evaluateSprites :: Int -> IOEmulator ()
-evaluateSprites scanline = do
-  spriteSize <- load $ Ppu SpriteSize
-  sprites <- traverse (getSpriteAt scanline spriteSize) (V.fromList [0..63])
-  -- let visibleSprites = V.take 8 $ V.filter (isSpriteVisible scanline spriteSize) sprites
-  let visibleSprites = V.take 3 $ sprites
-  store (Ppu Sprites) visibleSprites
-
-isSpriteVisible :: Int -> SpriteSize -> Sprite -> Bool
-isSpriteVisible scanline spriteSize (Sprite i (x, y) _ _ _) = row < 0 || row >= h
+isSpriteVisible :: Int -> SpriteSize -> Bool
+isSpriteVisible row spriteSize = row >= 0 && row < h
   where
-    row = scanline - y
     h = case spriteSize of
           Normal -> 8
           Double -> 16
