@@ -8,7 +8,6 @@ module Emulator.Nes (
   , Color
   , Flag(..)
   , IncrementMode(..)
-  , SpriteTableAddr(..)
   , SpriteSize(..)
   , ColorMode(..)
   , Visibility(..)
@@ -39,7 +38,8 @@ data Sprite = Sprite {
   sIndex         :: Int,
   sCoords        :: Coords,
   sTileIndexByte :: Word8,
-  sAttributeByte :: Word8
+  sAttributeByte :: Word8,
+  sPattern       :: Word32
 } deriving (Show, Eq)
 
 type Coords = (Int, Int)
@@ -47,8 +47,6 @@ type Coords = (Int, Int)
 type Color = (Word8, Word8, Word8)
 
 data IncrementMode = Horizontal | Vertical
-
-data SpriteTableAddr = SpriteTable0000 | SpriteTable1000
 
 data SpriteSize = Normal | Double
 
@@ -98,7 +96,7 @@ data PPU = PPU {
   -- Control register bits
   nameTable             :: IORef Word16,
   incrementMode         :: IORef IncrementMode,
-  spriteTable           :: IORef SpriteTableAddr,
+  spriteTable           :: IORef Word16,
   bgTable               :: IORef Word16,
   spriteSize            :: IORef SpriteSize,
   nmiEnabled            :: IORef Bool,
@@ -150,6 +148,7 @@ data Ppu a where
   CurrentVRamAddr :: Ppu Word16
   TempVRamAddr :: Ppu Word16
   BackgroundTableAddr :: Ppu Word16
+  SpriteTableAddr :: Ppu Word16
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
   ScrollX :: Ppu Word8
@@ -299,7 +298,7 @@ newPPU = do
   -- Control register
   nameTable <- newIORef 0x2000
   incrementMode <- newIORef Horizontal
-  spriteTable <- newIORef SpriteTable0000
+  spriteTable <- newIORef 0x0000
   bgTable <- newIORef 0x0000
   spriteSize <- newIORef Normal
   nmiEnabled <- newIORef False
@@ -362,6 +361,7 @@ readPPU nes addr = case addr of
   VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
   GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
+  SpriteTableAddr     -> readIORef $ spriteTable $ ppu nes
   ScrollX             -> fmap (fromIntegral . (`shiftR` 8)) (readIORef $ scrollXY $ ppu nes)
   ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
   NameTableByte       -> readIORef $ nameTableByte $ ppu nes
@@ -477,7 +477,7 @@ writeControl ppu v = do
     2 -> 0x2800
     3 -> 0x2C00
   modifyIORef' (incrementMode ppu) $ const $ if testBit v 2 then Vertical else Horizontal
-  modifyIORef' (spriteTable ppu) $ const $ if testBit v 3 then SpriteTable1000 else SpriteTable0000
+  modifyIORef' (spriteTable ppu) $ const $ if testBit v 3 then 0x1000 else 0x0000
   modifyIORef' (bgTable ppu) $ const $ if testBit v 4 then 0x1000 else 0x0000
   modifyIORef' (spriteSize ppu) $ const $ if testBit v 5 then Double else Normal
   modifyIORef' (nmiEnabled ppu) $ const $ testBit v 7
