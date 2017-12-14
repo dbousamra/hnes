@@ -45,6 +45,7 @@ tick = do
   cycles' <- load $ Ppu PpuCycles
   pure (scanline', cycles')
 
+{-# INLINE handleLinePhase #-}
 handleLinePhase :: Int -> Int -> IOEmulator ()
 handleLinePhase scanline cycle = do
   let preLine = scanline == 261
@@ -101,7 +102,9 @@ renderPixel scanline cycle = do
 getBackgroundPixel :: Coords -> IOEmulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
-  pure $ fromIntegral $ (tileData `shiftR` 28) .&. 0x0F -- TODO: FIX?
+  fineX <- load (Ppu FineX)
+  let scrolled = tileData `shiftR` fromIntegral ((7 - fineX) * 4)
+  pure $ fromIntegral (scrolled .&. 0x0F)
 
 getSpritePixel :: Coords -> IOEmulator Word8
 getSpritePixel coords = do

@@ -115,7 +115,7 @@ data PPU = PPU {
   spriteZeroHit         :: IORef Bool,
   verticalBlank         :: IORef Bool,
   -- Scroll register
-  scrollXY              :: IORef Word16,
+  fineX                 :: IORef Word8,
   -- Data register
   dataV                 :: IORef Word8,
   -- Temp vars
@@ -149,10 +149,9 @@ data Ppu a where
   TempVRamAddr :: Ppu Word16
   BackgroundTableAddr :: Ppu Word16
   SpriteTableAddr :: Ppu Word16
+  FineX :: Ppu Word8
   VerticalBlank :: Ppu Bool
   GenerateNMI :: Ppu Bool
-  ScrollX :: Ppu Word8
-  ScrollY :: Ppu Word16
   NameTableByte :: Ppu Word8
   AttrTableByte :: Ppu Word8
   LoTileByte :: Ppu Word8
@@ -318,7 +317,7 @@ newPPU = do
   spriteZeroHit <- newIORef False
   vBlankStarted <- newIORef False
   -- Scroll register
-  scrollXY <- newIORef 0x0000
+  fineX <- newIORef 0x0
   -- Data register
   dataV <- newIORef 0x0
   -- Temp vars
@@ -344,7 +343,7 @@ newPPU = do
     -- Status register
     lastWrite spriteOverflow spriteZeroHit vBlankStarted
     -- Scroll register
-    scrollXY
+    fineX
     -- Data register
     dataV
     -- Temp vars
@@ -359,12 +358,11 @@ readPPU nes addr = case addr of
   TempVRamAddr        -> readIORef $ tempVramAddress $ ppu nes
   Scanline            -> readIORef $ scanline $ ppu nes
   FrameCount          -> readIORef $ frameCount $ ppu nes
+  FineX               -> readIORef $ fineX $ ppu nes
   VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
   GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
   BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
   SpriteTableAddr     -> readIORef $ spriteTable $ ppu nes
-  ScrollX             -> fmap (fromIntegral . (`shiftR` 8)) (readIORef $ scrollXY $ ppu nes)
-  ScrollY             -> fmap (.&. 0xFF) (readIORef $ scrollXY $ ppu nes)
   NameTableByte       -> readIORef $ nameTableByte $ ppu nes
   BackgroundVisible   -> readIORef $ bgVisibility $ ppu nes
   SpritesVisible      -> readIORef $ spriteVisibility $ ppu nes
@@ -428,6 +426,7 @@ readStatus ppu = do
   vBlankV <- readIORef $ verticalBlank ppu
   let r = fromEnum vBlankV `shiftL` 7
   modifyIORef' (verticalBlank ppu) (const False)
+  modifyIORef' (writeToggle ppu) (const False)
   pure $ fromIntegral r
 
 readOAMData :: PPU -> IO Word8
@@ -507,16 +506,32 @@ writeOAMData ppu v = do
 
 writeScroll :: PPU -> Word8 -> IO ()
 writeScroll ppu v = do
-  modifyIORef' (scrollXY ppu) (`shiftL` 8)
-  modifyIORef' (scrollXY ppu) (.|. toWord16 v)
+  wv <- readIORef (writeToggle ppu)
+  tv <- readIORef (tempVramAddress ppu)
+  if wv then do
+    let tv' = (tv .&. 0x8FFF) .|. ((toWord16 v .&. 0x07) `shiftL` 12)
+    let tv'' = (tv' .&. 0xFC1F) .|. ((toWord16 v .&. 0xF8) `shiftL` 2)
+    modifyIORef' (tempVramAddress ppu) (const tv'')
+    modifyIORef' (writeToggle ppu) (const False)
+  else do
+    let tv' = (tv .&. 0xFFE0) .|. (toWord16 v `shiftR` 3)
+    modifyIORef' (tempVramAddress ppu) (const tv')
+    modifyIORef' (fineX ppu) (const $ v .&. 0x07)
+    modifyIORef' (writeToggle ppu) (const True)
 
 writeAddress :: PPU -> Word8 -> IO ()
 writeAddress ppu v = do
-  wt <- readIORef $ writeToggle ppu
-  tVrV <- readIORef $ currentVramAddress ppu
-  let v' = if wt then (tVrV .&. 0xFF00) .|. (toWord16 v) else (tVrV .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
-  modifyIORef' (currentVramAddress ppu) (const v')
-  modifyIORef' (writeToggle ppu) (const $ not wt)
+  wv <- readIORef $ writeToggle ppu
+  tv <- readIORef $ tempVramAddress ppu
+  if wv then do
+    let tv' = (tv .&. 0xFF00) .|. (toWord16 v)
+    modifyIORef' (tempVramAddress ppu) (const tv')
+    modifyIORef' (currentVramAddress ppu) (const tv')
+    modifyIORef' (writeToggle ppu) (const False)
+  else do
+    let tv' = (tv .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
+    modifyIORef' (tempVramAddress ppu) (const tv')
+    modifyIORef' (writeToggle ppu) (const True)
 
 writeDMA :: Nes -> Word8 -> IO ()
 writeDMA nes v = do

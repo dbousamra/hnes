@@ -29,7 +29,7 @@ main = do
   window <- SDL.createWindow "hnes" windowConfig
   -- Create Renderer
   let rendererConfig = RendererConfig {
-    rendererType          = AcceleratedRenderer,
+    rendererType          = AcceleratedVSyncRenderer,
     rendererTargetTexture = True
   }
   renderer <- SDL.createRenderer window (-1) rendererConfig
