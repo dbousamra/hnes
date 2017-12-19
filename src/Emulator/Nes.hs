@@ -22,7 +22,8 @@ module Emulator.Nes (
 
 import           Control.Monad
 import           Control.Monad.ST
-import           Data.Bits                    (shiftL, shiftR, testBit, (.&.), (.|.))
+import           Data.Bits                    (setBit, shiftL, shiftR, testBit, (.&.),
+                                               (.|.))
 import           Data.IORef
 import           Data.Set                     as Set
 import qualified Data.Vector                  as V
@@ -39,7 +40,8 @@ data Sprite = Sprite {
   sCoords        :: Coords,
   sTileIndexByte :: Word8,
   sAttributeByte :: Word8,
-  sPattern       :: Word32
+  sPattern       :: Word32,
+  sPriority      :: Word8
 } deriving (Show, Eq)
 
 type Coords = (Int, Int)
@@ -84,6 +86,7 @@ data PPU = PPU {
   scanline              :: IORef Int,
   frameCount            :: IORef Int,
   writeToggle           :: IORef Bool,
+  ppuRegister           :: IORef Word8,
   -- Data
   oamData               :: VUM.IOVector Word8,
   nameTableData         :: VUM.IOVector Word8,
@@ -159,6 +162,7 @@ data Ppu a where
   SpriteSize :: Ppu SpriteSize
   BackgroundVisible :: Ppu Bool
   SpritesVisible :: Ppu Bool
+  SpriteZeroHit :: Ppu Bool
   TileData :: Ppu Word64
   PaletteData :: Word16 -> Ppu Word8
   OamData :: Word16 -> Ppu Word8
@@ -286,6 +290,7 @@ newPPU = do
   scanline <- newIORef 0
   frameCount <- newIORef 0
   writeToggle <- newIORef False
+  ppuRegister <- newIORef 0x0
   -- Data
   oamData <- VUM.replicate 0x100 0x0
   nameTableData <- VUM.replicate 0x800 0x0
@@ -330,7 +335,7 @@ newPPU = do
 
   pure $ PPU
     -- Misc
-    cycles scanline frameCount writeToggle
+    cycles scanline frameCount writeToggle ppuRegister
     -- Data
     oamData nameTableData paletteData screen
     -- Addresses
@@ -366,6 +371,7 @@ readPPU nes addr = case addr of
   NameTableByte       -> readIORef $ nameTableByte $ ppu nes
   BackgroundVisible   -> readIORef $ bgVisibility $ ppu nes
   SpritesVisible      -> readIORef $ spriteVisibility $ ppu nes
+  SpriteZeroHit       -> readIORef $ spriteZeroHit $ ppu nes
   AttrTableByte       -> readIORef $ attrTableByte $ ppu nes
   LoTileByte          -> readIORef $ loTileByte $ ppu nes
   HiTileByte          -> readIORef $ hiTileByte $ ppu nes
@@ -385,6 +391,7 @@ writePPU ppu addr v = case addr of
   CurrentVRamAddr -> modifyIORef' (currentVramAddress ppu) (const v)
   TempVRamAddr    -> modifyIORef' (tempVramAddress ppu) (const v)
   VerticalBlank   -> modifyIORef' (verticalBlank ppu) (const v)
+  SpriteZeroHit   -> modifyIORef' (spriteZeroHit ppu) (const v)
   NameTableByte   -> modifyIORef' (nameTableByte ppu) (const v)
   AttrTableByte   -> modifyIORef' (attrTableByte ppu) (const v)
   LoTileByte      -> modifyIORef' (loTileByte ppu) (const v)
@@ -423,11 +430,17 @@ readPPURegister nes addr = case 0x2000 + addr `mod` 8 of
 
 readStatus :: PPU -> IO Word8
 readStatus ppu = do
+  registerV <- readIORef $ ppuRegister ppu
+  spriteOverflowV <- readIORef $ spriteOverflow ppu
+  spriteZeroHitV <- readIORef $ spriteZeroHit ppu
   vBlankV <- readIORef $ verticalBlank ppu
-  let r = fromEnum vBlankV `shiftL` 7
+  let r = registerV .&. 0x1F
+  let r' = r .|. fromIntegral (fromEnum spriteOverflowV `shiftL` 5)
+  let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `shiftL` 6)
+  let rFinal = r'' .|. fromIntegral (fromEnum vBlankV `shiftL` 7)
   modifyIORef' (verticalBlank ppu) (const False)
   modifyIORef' (writeToggle ppu) (const False)
-  pure $ fromIntegral r
+  pure $ fromIntegral rFinal
 
 readOAMData :: PPU -> IO Word8
 readOAMData ppu = do

@@ -88,15 +88,16 @@ handleLinePhase scanline cycle = do
   when (scanline == 241 && cycle == 1) $
     enterVBlank
 
-  when (preLine && cycle == 1) $
+  when (preLine && cycle == 1) $ do
     exitVBlank
+    store (Ppu SpriteZeroHit) False
 
 renderPixel :: Int -> Int -> IOEmulator ()
 renderPixel scanline cycle = do
   let coords = (cycle - 1, scanline)
   bgColor <- getBackgroundPixel coords
   spriteColor <- getSpritePixel coords
-  finalColor <- getComposedColor bgColor spriteColor
+  finalColor <- getComposedColor coords bgColor spriteColor
   store (Ppu $ Screen coords) finalColor
 
 getBackgroundPixel :: Coords -> IOEmulator Word8
@@ -106,40 +107,46 @@ getBackgroundPixel coords = do
   let scrolled = tileData `shiftR` fromIntegral ((7 - fineX) * 4)
   pure $ fromIntegral (scrolled .&. 0x0F)
 
-getSpritePixel :: Coords -> IOEmulator Word8
+getSpritePixel :: Coords -> IOEmulator (Maybe (Sprite, Word8))
 getSpritePixel coords = do
   sprites <- load (Ppu Sprites)
   let colors = V.map getColor sprites
-  pure $ fromMaybe 0 (msum colors)
+  pure $ msum colors
   where
-    getColor :: Sprite -> Maybe Word8
-    getColor (Sprite _ (x, y) _ _ sPattern) = do
+    getColor :: Sprite -> Maybe (Sprite, Word8)
+    getColor sprite@(Sprite _ (x, y) _ _ sPattern _) = do
       let offset = fst coords - x
       if offset >= 0 && offset <= 7 then do
         let nextOffset = fromIntegral ((7 - offset) * 4) :: Word8
         let shifted = fromIntegral (sPattern `shiftR` fromIntegral nextOffset) :: Word8
         let color = shifted .&. 0x0F
-        if color `mod` 4 /= 0 then Just color else Nothing
+        if color `mod` 4 /= 0
+          then Just (sprite, color)
+          else Nothing
       else
         Nothing
 
-
-getComposedColor :: Word8 -> Word8 -> IOEmulator Color
-getComposedColor bg sprite = do
+getComposedColor :: Coords -> Word8 -> Maybe (Sprite, Word8) -> IOEmulator Color
+getComposedColor (x, y) bg sprite = do
+  color <- getColor
   index <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral color)
   pure $ getPaletteColor (index `mod` 64)
   where
     b = bg `mod` 4 /= 0
-    s = sprite `mod` 4 /= 0
-    color =
-      if not b && not s then
-        0
-      else if not b && s then
-        sprite .|. 0x10
-      else if b && not s then
-        bg
-      else
-        sprite .|. 0x10
+    (sc, ind, priority) = case sprite of
+      Just (s, c) -> (c, sIndex s, sPriority s)
+      Nothing     -> (0, 0, 0)
+    s =  sc `mod` 4 /= 0
+    getColor
+      | not b && not s = pure 0
+      | not b && s = pure $ sc .|. 0x10
+      | b && not s = pure bg
+      | otherwise = do
+        store (Ppu SpriteZeroHit) (ind == 0 && x < 255)
+        if priority == 0 then
+          pure $ sc .|. 0x10
+        else
+          pure bg
 
 readPalette :: Word16 -> IOEmulator Word8
 readPalette addr = load $ Ppu $ PaletteData addr'
@@ -209,7 +216,7 @@ storeTileData = do
         let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
         pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
 
-  let tileData' = V.foldl op 0 tileData
+  let tileData' = V.foldl' op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
 
   modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
@@ -269,13 +276,14 @@ getSpriteAt scanline size i = do
 
   if isSpriteVisible row size then do
     tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
-    attributeByte <- load (Ppu $ OamData $ baseOffset + 2)
+    attrByte <- load (Ppu $ OamData $ baseOffset + 2)
     x <- load (Ppu $ OamData $ baseOffset + 3)
-    addr <- getSpriteAddress row size attributeByte tileIndexByte
+    addr <- getSpriteAddress row size attrByte tileIndexByte
     loTileByte <- load (Ppu $ PpuMemory8 addr)
     hiTileByte <- load (Ppu $ PpuMemory8 $ addr + 8)
-    let spritePattern = decodeSpritePattern attributeByte loTileByte hiTileByte
-    pure $ Just $ Sprite i (fromIntegral x, fromIntegral $ y) tileIndexByte attributeByte spritePattern
+    let spritePattern = decodeSpritePattern attrByte loTileByte hiTileByte
+    let priority = (attrByte `shiftR` 5) .&. 1
+    pure $ Just $ Sprite i (fromIntegral x, fromIntegral $ y) tileIndexByte attrByte spritePattern priority
   else
     pure $ Nothing
 
@@ -296,7 +304,7 @@ decodeSpritePattern attr lo hi = tileData'
           (p1, p2)
 
     pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
-  tileData' = V.foldl op 0 tileData
+  tileData' = V.foldl' op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
 
 getSpriteAddress :: Int -> SpriteSize -> Word8 -> Word8 -> IOEmulator Word16
