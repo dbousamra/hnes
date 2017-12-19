@@ -91,7 +91,7 @@ eventsToIntents events = Set.fromList $ catMaybes $ eventToIntent . SDL.eventPay
     eventToIntent _ = Nothing
 
 intentsToKeys :: Set Controller.Key -> Set Intent -> Set Controller.Key
-intentsToKeys = foldl op
+intentsToKeys = foldl' op
   where op keys intent = case intent of
           KeyPress key   -> Set.insert key keys
           KeyRelease key -> Set.delete key keys
