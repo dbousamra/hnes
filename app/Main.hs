@@ -3,18 +3,17 @@
 module Main where
 
 import           Control.Monad
-import           Control.Monad.IO.Class
-import qualified Data.ByteString        as BS
-import           Data.Maybe             (catMaybes)
-import           Data.Set               as Set hiding (foldl)
-import qualified Data.Text              as T
-import           Emulator               (reset, stepFrame)
-import           Emulator.Controller    as Controller
+import qualified Data.ByteString     as BS
+import           Data.Maybe          (catMaybes)
+import           Data.Set            as Set hiding (foldl)
+import qualified Data.Text           as T
+import           Emulator            (reset, stepFrame)
+import           Emulator.Controller as Controller
 import           Emulator.Monad
 import           Emulator.Nes
-import           SDL                    as SDL
+import           SDL                 as SDL
 import           SDL.Time
-import           System.Environment     (getArgs)
+import           System.Environment  (getArgs)
 
 main :: IO ()
 main = do

@@ -5,14 +5,11 @@ module Emulator (
 ) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class
 import           Control.Monad.Loops
-import qualified Emulator.CPU           as CPU
+import qualified Emulator.CPU        as CPU
 import           Emulator.Monad
 import           Emulator.Nes
-import qualified Emulator.PPU           as PPU
-import           Emulator.Trace         (Trace (..))
-import           Prelude                hiding (and, compare)
+import qualified Emulator.PPU        as PPU
 
 step :: IOEmulator ()
 step = do
