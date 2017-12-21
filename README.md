@@ -1,8 +1,32 @@
 # hnes
 
+[![Build Status](https://travis-ci.org/dbousamra/hnes.svg?branch=master)](https://travis-ci.org/dbousamra/hnes)
+
 Welcome to hnes. hnes is a NES emulator written in Haskell.
 
-# Building
+## Screenshots
+
+<p float="left">
+  <img src="screenshots/nestest-4.png" width="200" />
+  <img src="screenshots/mario-1.png" width="200" /> 
+  <img src="screenshots/mario-2.png" width="200" />
+  <img src="screenshots/megaman-3.png" width="200" />
+  <img src="screenshots/contra-1.png" width="200" />
+  <img src="screenshots/contra-2.png" width="200" />
+</p>
+
+
+## Controls
+
+| Nintendo              | Emulator    |
+| --------------------- | ----------- |
+| Up, Down, Left, Right | Arrow Keys  |
+| Start                 | Enter       |
+| Select                | Space       |
+| A                     | Z           |
+| B                     | X           |
+
+## Building
 
 hnes uses stack. 
 
@@ -24,8 +48,7 @@ And to run:
 `stack exec -- hnes roms/tests/cpu/nestest/nestest.nes`
 
 
-
-# Task list
+## Task list
 - [x] Basic structure
 - [ ] Mappers
   - [x] Loading roms
@@ -45,44 +68,4 @@ And to run:
 - [x] Performance tuning
 
 
-# Screenshots
 
-Early on in the PPU
-
-<img src="screenshots/nestest-1.png" width="256" height="240"/>
-
-<img src="screenshots/nestest-2.png" width="256" height="240"/>
-
-<img src="screenshots/nestest-3.png" width="256" height="240"/>
-
-<img src="screenshots/nestest-4.png" width="256" height="240"/>
-
-<img src="screenshots/1942-1.png" width="256" height="240"/>
-
-<img src="screenshots/1942-2.png" width="256" height="240"/>
-
-<img src="screenshots/dk-1.png" width="256" height="240"/>
-
-<img src="screenshots/dk-2.png" width="256" height="240"/>
-
-<img src="screenshots/dk-3.png" width="256" height="240"/>
-
-<img src="screenshots/balloon-fight-1.png" width="256" height="240"/>
-
-<img src="screenshots/balloon-fight-2.png" width="256" height="240"/>
-
-<img src="screenshots/contra-1.png" width="256" height="240"/>
-
-<img src="screenshots/contra-2.png" width="256" height="240"/>
-
-<img src="screenshots/megaman-1.png" width="256" height="240"/>
-
-<img src="screenshots/megaman-2.png" width="256" height="240"/>
-
-<img src="screenshots/skydest-1.png" width="256" height="240"/>
-
-<img src="screenshots/slalom-1.png" width="256" height="240"/>
-
-<img src="screenshots/zelda-1.png" width="256" height="240"/>
-
-<img src="screenshots/mario-1.png" width="256" height="240"/>
