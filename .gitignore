@@ -17,3 +17,4 @@ cabal.sandbox.config
 cabal.project.local
 .HTF/
 roms/test/dump
+roms/games/
