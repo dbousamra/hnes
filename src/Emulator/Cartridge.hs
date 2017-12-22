@@ -6,6 +6,7 @@ module Emulator.Cartridge (
 ) where
 
 import           Control.Monad.ST
+import           Data.Bits
 import qualified Data.ByteString             as BS
 import           Data.IORef
 import qualified Data.Vector.Unboxed         as VU
@@ -31,7 +32,8 @@ data Cartridge = Cartridge {
   chrBanks :: Int,
   prgBank1 :: IORef Int,
   prgBank2 :: IORef Int,
-  chrBank1 :: IORef Int
+  chrBank1 :: IORef Int,
+  mirror   :: Int
 }
 
 parseHeader :: BS.ByteString -> INesFileHeader
@@ -45,7 +47,7 @@ parseHeader bs = INesFileHeader
 
 parse :: BS.ByteString -> IO Cartridge
 parse bs = do
-  let (INesFileHeader _ numPrg numChr _ _ _) = parseHeader bs
+  let (INesFileHeader _ numPrg numChr ctrl1 _ _) = parseHeader bs
   let prgOffset = numPrg * prgRomSize
   let prgRom = sliceBS headerSize (headerSize + prgOffset) bs
   let chrOffset = numChr * chrRomSize
@@ -63,10 +65,14 @@ parse bs = do
   let chrBanks = VUM.length chr `div` 0x2000
   chrBank1 <- newIORef 0
 
-  pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1
+  let mirror1 = ctrl1 .&. 1
+  let mirror2 = (ctrl1 `shiftR` 3) .&. 1
+  let mirror = mirror1 .|. (mirror2 `shiftR` 1)
+
+  pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1 mirror
 
 read :: Cartridge -> Word16 -> IO Word8
-read (Cartridge chr prg sram _ _ prgBank1 prgBank2 _) addr
+read (Cartridge chr prg sram _ _ prgBank1 prgBank2 _ _) addr
   | addr' <  0x2000 = VUM.unsafeRead chr addr'
   | addr' >= 0xC000 = do
     prgBank2V <- readIORef prgBank2
@@ -79,7 +85,7 @@ read (Cartridge chr prg sram _ _ prgBank1 prgBank2 _) addr
   where addr' = fromIntegral addr
 
 write :: Cartridge -> Word16 -> Word8 -> IO ()
-write (Cartridge chr _ sram _ _ prgBank1 _ _) addr v
+write (Cartridge chr _ sram _ _ prgBank1 _ _ _) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chr addr' v
   | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v)
   | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v

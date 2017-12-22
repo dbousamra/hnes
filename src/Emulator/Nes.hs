@@ -408,7 +408,7 @@ writePPU ppu addr v = case addr of
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
   | addr' < 0x2000 = Cartridge.read (cart nes) addr'
-  | addr' < 0x3F00 = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  | addr' < 0x3F00 = readNametableData nes addr'
   | addr' < 0x4000 = readPalette nes addr'
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
@@ -416,7 +416,7 @@ readPPUMemory nes addr
 writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
 writePPUMemory nes addr v
   | addr' < 0x2000 = Cartridge.write (cart nes) addr' v
-  | addr' < 0x3F00 = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800) v
+  | addr' < 0x3F00 = writeNametableData nes addr' v
   | addr' < 0x4000 = writePalette nes addr' v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
@@ -566,6 +566,16 @@ writeData nes v = do
         Vertical   -> 32
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
 
+writeNametableData :: Nes -> Word16 -> Word8 -> IO ()
+writeNametableData nes addr = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  where mirror = (Cartridge.mirror $ cart nes)
+        addr' = addr
+
+readNametableData :: Nes -> Word16 -> IO Word8
+readNametableData nes addr = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
+  where mirror = (Cartridge.mirror $ cart nes)
+        addr' = mirroredNametableAddr addr mirror
+
 writePalette :: Nes -> Word16 -> Word8 -> IO ()
 writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
 
@@ -575,6 +585,22 @@ readPalette nes addr = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ mi
 mirroredPaletteAddr :: Word16 -> Word16
 mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
   where addr' = addr `mod` 32
+
+mirroredNametableAddr :: Word16 -> Int -> Word16
+mirroredNametableAddr addr mirror = 0x2000 + lookup + offset
+  where addr' = (addr - 0x2000) `mod` 0x1000
+        tableIndex = fromIntegral $ addr' `div` 0x0400
+        lookup = ((nameTableMirrorLookup V.! mirror) V.! tableIndex) * 0x4000
+        offset = fromIntegral $ addr' `mod` 0x0400
+
+nameTableMirrorLookup :: V.Vector (V.Vector Word16)
+nameTableMirrorLookup = V.fromList (fmap V.fromList [
+    [0, 0, 1, 1],
+    [0, 1, 0, 1],
+    [0, 0, 0, 0],
+    [1, 1, 1, 1],
+    [0, 1, 2, 3]
+  ])
 
 writeKeys :: Nes -> Set Controller.Key -> IO ()
 writeKeys = Controller.setKeysDown . controller
