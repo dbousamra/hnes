@@ -398,12 +398,7 @@ writePPU ppu addr v = case addr of
   HiTileByte      -> modifyIORef' (hiTileByte ppu) (const v)
   TileData        -> modifyIORef' (tileData ppu) (const v)
   Sprites         -> modifyIORef' (sprites ppu) (const v)
-  Screen coords   -> do
-    let (r, g, b) = v
-    let offset = fromIntegral $ translateXY coords 256 * 3
-    VUM.write (screen ppu) (offset + 0) r
-    VUM.write (screen ppu) (offset + 1) g
-    VUM.write (screen ppu) (offset + 2) b
+  Screen coords   -> writeScreen ppu coords v
 
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
@@ -607,6 +602,14 @@ writeKeys = Controller.setKeysDown . controller
 
 readKeys :: Nes -> IO (Set Controller.Key)
 readKeys = Controller.readKeysDown . controller
+
+writeScreen :: PPU -> Coords -> Color -> IO ()
+writeScreen ppu coords color = do
+  let (r, g, b) = color
+  let offset = fromIntegral $ translateXY coords 256 * 3
+  VUM.write (screen ppu) (offset + 0) r
+  VUM.write (screen ppu) (offset + 1) g
+  VUM.write (screen ppu) (offset + 2) b
 
 translateXY :: Coords -> Int -> Int
 translateXY (x, y) width = x + (y * width)
