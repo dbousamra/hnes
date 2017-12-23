@@ -219,7 +219,9 @@ storeTileData = do
   let tileData' = V.foldl' op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
 
+
   modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
+
 
 copyY :: IOEmulator ()
 copyY = do
@@ -236,8 +238,9 @@ copyX = do
 incrementX :: IOEmulator ()
 incrementX = do
   v <- load $ Ppu CurrentVRamAddr
-  if v .&. 0x001F == 31 then
-    modify (Ppu CurrentVRamAddr) ((.&. 0xFFE0) . (`xor` 0x0400))
+  if v .&. 0x001F == 31 then do
+    modify (Ppu CurrentVRamAddr) (.&. 0xFFE0)
+    modify (Ppu CurrentVRamAddr) (`xor` 0x0400)
   else
     modify (Ppu CurrentVRamAddr) (+ 1)
 

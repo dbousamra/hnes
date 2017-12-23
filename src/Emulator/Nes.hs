@@ -567,14 +567,14 @@ writeData nes v = do
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
 
 writeNametableData :: Nes -> Word16 -> Word8 -> IO ()
-writeNametableData nes addr = VUM.unsafeWrite (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
-  where mirror = (Cartridge.mirror $ cart nes)
-        addr' = addr
+writeNametableData nes addr = VUM.unsafeWrite (nameTableData $ ppu nes) addr'
+  where mirror = Cartridge.mirror $ cart nes
+        addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
 
 readNametableData :: Nes -> Word16 -> IO Word8
-readNametableData nes addr = VUM.unsafeRead (nameTableData $ ppu nes) (fromIntegral $ addr' `mod` 0x800)
-  where mirror = (Cartridge.mirror $ cart nes)
-        addr' = mirroredNametableAddr addr mirror
+readNametableData nes addr = VUM.unsafeRead (nameTableData $ ppu nes) addr'
+  where mirror = Cartridge.mirror $ cart nes
+        addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
 
 writePalette :: Nes -> Word16 -> Word8 -> IO ()
 writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
@@ -590,7 +590,7 @@ mirroredNametableAddr :: Word16 -> Int -> Word16
 mirroredNametableAddr addr mirror = 0x2000 + lookup + offset
   where addr' = (addr - 0x2000) `mod` 0x1000
         tableIndex = fromIntegral $ addr' `div` 0x0400
-        lookup = ((nameTableMirrorLookup V.! mirror) V.! tableIndex) * 0x4000
+        lookup = ((nameTableMirrorLookup V.! mirror) V.! tableIndex) * 0x0400
         offset = fromIntegral $ addr' `mod` 0x0400
 
 nameTableMirrorLookup :: V.Vector (V.Vector Word16)

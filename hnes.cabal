@@ -24,9 +24,9 @@ library
                      , Emulator.Controller
   default-extensions: Strict
   ghc-options:       -fno-warn-name-shadowing 
+                    --  -O2
                     --  -fllvm
-                     -fforce-recomp
-                     -O2
+                    --  -fforce-recomp
   build-depends:       base >= 4.7 && < 5
                      , mtl
                      , vector
@@ -42,9 +42,10 @@ executable hnes
   main-is:             Main.hs
   default-language:    Haskell2010
   default-extensions: Strict
-  ghc-options:        -O2 -threaded
+  ghc-options:        -threaded
+                      -- -O2
                       -- -fllvm 
-                      -fforce-recomp
+                      -- -fforce-recomp
   build-depends:       base >= 4.7 && < 5
                      , hnes
                      , mtl
