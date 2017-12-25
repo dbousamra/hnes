@@ -30,8 +30,10 @@ import qualified Data.Vector                  as V
 import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
-import qualified Emulator.Cartridge           as Cartridge
+import           Emulator.Cartridge
 import qualified Emulator.Controller          as Controller
+import qualified Emulator.Mapper              as Mapper
+import qualified Emulator.Mapper.Mapper2      as Mapper2
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
 
@@ -59,7 +61,7 @@ data Visibility = Hidden | Shown
 data Nes = Nes {
   cpu        :: CPU,
   ppu        :: PPU,
-  cart       :: Cartridge.Cartridge,
+  mapper     :: Mapper.Mapper,
   controller :: Controller.Controller
 }
 
@@ -188,12 +190,13 @@ data Flag
   | Carry
   deriving (Enum)
 
-new :: Cartridge.Cartridge -> IO Nes
+new :: Cartridge -> IO Nes
 new cart = do
   cpu <- newCPU
   ppu <- newPPU
+  mapper <- pure $ Mapper.new cart
   controller <- Controller.new
-  pure $ Nes cpu ppu cart controller
+  pure $ Nes cpu ppu mapper controller
 
 read :: Nes -> Address a -> IO a
 read nes addr = case addr of
@@ -254,7 +257,7 @@ readCpuMemory8 nes addr
   | addr == 0x4016 = Controller.read $ controller nes
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
-  | addr >= 0x6000 && addr <= 0xFFFF = Cartridge.read (cart nes) addr
+  | addr >= 0x6000 && addr <= 0xFFFF = Mapper.read (mapper nes) addr
   | otherwise = error "Erroneous read detected!"
 
 readCpuMemory16 :: Nes -> Word16 -> IO Word16
@@ -271,7 +274,7 @@ writeCpuMemory8 nes addr v
   | addr == 0x4016 = Controller.write (controller nes) v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = pure ()
-  | addr >= 0x4020 && addr <= 0xFFFF = Cartridge.write (cart nes) addr v
+  | addr >= 0x4020 && addr <= 0xFFFF = Mapper.write (mapper nes) addr v
   | otherwise = error "Erroneous write detected!"
 
 writeCpuMemory16 :: Nes -> Word16 -> Word16 -> IO ()
@@ -402,7 +405,7 @@ writePPU ppu addr v = case addr of
 
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
-  | addr' < 0x2000 = Cartridge.read (cart nes) addr'
+  | addr' < 0x2000 = Mapper.read (mapper nes) addr'
   | addr' < 0x3F00 = readNametableData nes addr'
   | addr' < 0x4000 = readPalette nes addr'
   | otherwise = error "Erroneous read detected!"
@@ -410,7 +413,7 @@ readPPUMemory nes addr
 
 writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
 writePPUMemory nes addr v
-  | addr' < 0x2000 = Cartridge.write (cart nes) addr' v
+  | addr' < 0x2000 = Mapper.write (mapper nes) addr' v
   | addr' < 0x3F00 = writeNametableData nes addr' v
   | addr' < 0x4000 = writePalette nes addr' v
   | otherwise = error "Erroneous write detected!"
@@ -563,12 +566,12 @@ writeData nes v = do
 
 writeNametableData :: Nes -> Word16 -> Word8 -> IO ()
 writeNametableData nes addr = VUM.unsafeWrite (nameTableData $ ppu nes) addr'
-  where mirror = Cartridge.mirror $ cart nes
+  where mirror = Mapper.mirror (mapper nes)
         addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
 
 readNametableData :: Nes -> Word16 -> IO Word8
 readNametableData nes addr = VUM.unsafeRead (nameTableData $ ppu nes) addr'
-  where mirror = Cartridge.mirror $ cart nes
+  where mirror = Mapper.mirror (mapper nes)
         addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
 
 writePalette :: Nes -> Word16 -> Word8 -> IO ()

@@ -1,8 +1,6 @@
 module Emulator.Cartridge (
     Cartridge(..)
   , parse
-  , read
-  , write
 ) where
 
 import           Control.Monad.ST
@@ -25,15 +23,16 @@ data INesFileHeader = INesFileHeader {
 } deriving (Eq, Show)
 
 data Cartridge = Cartridge {
-  chrRom   :: VUM.MVector RealWorld Word8,
-  prgRom   :: VUM.MVector RealWorld Word8,
-  sRam     :: VUM.MVector RealWorld Word8,
-  prgBanks :: Int,
-  chrBanks :: Int,
-  prgBank1 :: IORef Int,
-  prgBank2 :: IORef Int,
-  chrBank1 :: IORef Int,
-  mirror   :: Int
+  chrRom     :: VUM.MVector RealWorld Word8,
+  prgRom     :: VUM.MVector RealWorld Word8,
+  sram       :: VUM.MVector RealWorld Word8,
+  prgBanks   :: Int,
+  chrBanks   :: Int,
+  prgBank1   :: IORef Int,
+  prgBank2   :: IORef Int,
+  chrBank1   :: IORef Int,
+  mirror     :: Int,
+  mapperType :: Int
 }
 
 parseHeader :: BS.ByteString -> INesFileHeader
@@ -47,7 +46,7 @@ parseHeader bs = INesFileHeader
 
 parse :: BS.ByteString -> IO Cartridge
 parse bs = do
-  let (INesFileHeader _ numPrg numChr ctrl1 _ _) = parseHeader bs
+  let (INesFileHeader _ numPrg numChr ctrl1 ctrl2 _) = parseHeader bs
   let prgOffset = numPrg * prgRomSize
   let prgRom = sliceBS headerSize (headerSize + prgOffset) bs
   let chrOffset = numChr * chrRomSize
@@ -69,28 +68,11 @@ parse bs = do
   let mirror2 = (ctrl1 `shiftR` 3) .&. 1
   let mirror = mirror1 .|. (mirror2 `shiftR` 1)
 
-  pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1 mirror
+  let mapper1 = ctrl1 `shiftR` 4
+  let mapper2 = ctrl2 `shiftR` 4
+  let mapper = mapper1 .|. (mapper2 `shiftL` 4)
 
-read :: Cartridge -> Word16 -> IO Word8
-read (Cartridge chr prg sram _ _ prgBank1 prgBank2 _ _) addr
-  | addr' <  0x2000 = VUM.unsafeRead chr addr'
-  | addr' >= 0xC000 = do
-    prgBank2V <- readIORef prgBank2
-    VUM.unsafeRead prg ((prgBank2V * 0x4000) + (addr' - 0xC000))
-  | addr' >= 0x8000 = do
-    prgBank1V <- readIORef prgBank1
-    VUM.unsafeRead prg ((prgBank1V * 0x4000) + (addr' - 0x8000))
-  | addr' >= 0x6000 = VUM.unsafeRead sram (addr' - 0x6000)
-  | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
-  where addr' = fromIntegral addr
-
-write :: Cartridge -> Word16 -> Word8 -> IO ()
-write (Cartridge chr _ sram _ _ prgBank1 _ _ _) addr v
-  | addr' < 0x2000 = VUM.unsafeWrite chr addr' v
-  | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v)
-  | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
-  | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
-  where addr' = fromIntegral addr
+  pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1 mirror mapper
 
 headerSize :: Int
 headerSize = 0x10
