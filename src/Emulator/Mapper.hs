@@ -19,6 +19,8 @@ new cart = case Cartridge.mapperType cart of
   2     -> mapper2 cart
   other -> error $ "Unsupported mapper type " ++ show other
 
-
 mapper2 :: Cartridge -> Mapper
-mapper2 cart = Mapper (Mapper2.read cart) (Mapper2.write cart) (Cartridge.mirror cart)
+mapper2 cart = Mapper
+  (Mapper2.read cart)
+  (Mapper2.write cart)
+  (Cartridge.mirror cart)
