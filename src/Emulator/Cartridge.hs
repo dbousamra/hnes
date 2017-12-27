@@ -52,20 +52,8 @@ parse bs = do
   prg <- VU.unsafeThaw $ VU.fromList $ BS.unpack prgRom
   sram <- VUM.replicate 0x2000 0
 
-  -- let prgBanks = VUM.length prg `div` 0x4000
-  -- prgBank1 <- newIORef 0
-  -- prgBank2 <- newIORef $ prgBanks - 1
-
-  -- let chrBanks = VUM.length chr `div` 0x2000
-  -- chrBank1 <- newIORef 0
-
-  let mirror1 = ctrl1 .&. 1
-  let mirror2 = (ctrl1 `shiftR` 3) .&. 1
-  let mirror = mirror1 .|. (mirror2 `shiftR` 1)
-
-  let mapper1 = ctrl1 `shiftR` 4
-  let mapper2 = ctrl2 `shiftR` 4
-  let mapper = mapper1 .|. (mapper2 `shiftL` 4)
+  let mirror = (ctrl1 .&. 1) .|. (((ctrl1 `shiftR` 3) .&. 1) `shiftR` 1)
+  let mapper = (ctrl1 `shiftR` 4) .|. ((ctrl2 `shiftR` 4) `shiftL` 4)
 
   pure $ Cartridge chr prg sram mirror mapper
 
