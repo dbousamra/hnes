@@ -194,7 +194,7 @@ new :: Cartridge -> IO Nes
 new cart = do
   cpu <- newCPU
   ppu <- newPPU
-  mapper <- pure $ Mapper.new cart
+  mapper <- Mapper.new cart
   controller <- Controller.new
   pure $ Nes cpu ppu mapper controller
 

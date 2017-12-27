@@ -26,11 +26,6 @@ data Cartridge = Cartridge {
   chrRom     :: VUM.MVector RealWorld Word8,
   prgRom     :: VUM.MVector RealWorld Word8,
   sram       :: VUM.MVector RealWorld Word8,
-  prgBanks   :: Int,
-  chrBanks   :: Int,
-  prgBank1   :: IORef Int,
-  prgBank2   :: IORef Int,
-  chrBank1   :: IORef Int,
   mirror     :: Int,
   mapperType :: Int
 }
@@ -57,12 +52,12 @@ parse bs = do
   prg <- VU.unsafeThaw $ VU.fromList $ BS.unpack prgRom
   sram <- VUM.replicate 0x2000 0
 
-  let prgBanks = VUM.length prg `div` 0x4000
-  prgBank1 <- newIORef 0
-  prgBank2 <- newIORef $ prgBanks - 1
+  -- let prgBanks = VUM.length prg `div` 0x4000
+  -- prgBank1 <- newIORef 0
+  -- prgBank2 <- newIORef $ prgBanks - 1
 
-  let chrBanks = VUM.length chr `div` 0x2000
-  chrBank1 <- newIORef 0
+  -- let chrBanks = VUM.length chr `div` 0x2000
+  -- chrBank1 <- newIORef 0
 
   let mirror1 = ctrl1 .&. 1
   let mirror2 = (ctrl1 `shiftR` 3) .&. 1
@@ -72,7 +67,7 @@ parse bs = do
   let mapper2 = ctrl2 `shiftR` 4
   let mapper = mapper1 .|. (mapper2 `shiftL` 4)
 
-  pure $ Cartridge chr prg sram prgBanks chrBanks prgBank1 prgBank2 chrBank1 mirror mapper
+  pure $ Cartridge chr prg sram mirror mapper
 
 headerSize :: Int
 headerSize = 0x10
