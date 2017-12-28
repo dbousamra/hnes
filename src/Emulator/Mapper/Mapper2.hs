@@ -16,7 +16,6 @@ import           Prelude                     hiding (read)
 
 data Mapper2 = Mapper2
   { cart     :: Cartridge
-  , mirror   :: Int
   , prgBanks :: Int
   , prgBank1 :: IORef Int
   , prgBank2 :: IORef Int
@@ -27,10 +26,10 @@ new cart @ Cartridge{..} = do
   let prgBanks = VUM.length (Cartridge.prgRom cart) `div` 0x4000
   prgBank1 <- newIORef 0
   prgBank2 <- newIORef $ prgBanks - 1
-  pure $ Mapper2 cart mirror prgBanks prgBank1 prgBank2
+  pure $ Mapper2 cart prgBanks prgBank1 prgBank2
 
 read :: Mapper2 -> Word16 -> IO Word8
-read (Mapper2 Cartridge {..} _ _ prgBank1 prgBank2) addr
+read (Mapper2 Cartridge {..} _ prgBank1 prgBank2) addr
   | addr' <  0x2000 = VUM.unsafeRead chrRom addr'
   | addr' >= 0xC000 = do
     prgBank2V <- readIORef prgBank2
@@ -43,9 +42,9 @@ read (Mapper2 Cartridge {..} _ _ prgBank1 prgBank2) addr
   where addr' = fromIntegral addr
 
 write :: Mapper2 -> Word16 -> Word8 -> IO ()
-write (Mapper2 Cartridge {..} _ _ prgBank1 _) addr v
+write (Mapper2 Cartridge {..} prgBanks prgBank1 _) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chrRom addr' v
-  | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v)
+  | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v `mod` prgBanks)
   | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
   | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
   where addr' = fromIntegral addr

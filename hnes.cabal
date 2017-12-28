@@ -19,6 +19,8 @@ library
                      , Emulator.Cartridge
                      , Emulator.Mapper
                      , Emulator.Mapper.Mapper2
+                     , Emulator.Mapper.Mapper3
+                     , Emulator.Mapper.Mapper7
                      , Emulator.Monad
                      , Emulator.Opcode
                      , Emulator.Util

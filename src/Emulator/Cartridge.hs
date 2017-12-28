@@ -1,5 +1,6 @@
 module Emulator.Cartridge (
     Cartridge(..)
+  , Mirror(..)
   , parse
 ) where
 
@@ -22,11 +23,19 @@ data INesFileHeader = INesFileHeader {
   numRam   :: Int
 } deriving (Eq, Show)
 
+data Mirror
+  = MirrorHorizontal
+  | MirrorVertical
+  | MirrorSingle0
+  | MirrorSingle1
+  | MirrorFour
+  deriving (Eq, Show, Enum)
+
 data Cartridge = Cartridge {
   chrRom     :: VUM.MVector RealWorld Word8,
   prgRom     :: VUM.MVector RealWorld Word8,
   sram       :: VUM.MVector RealWorld Word8,
-  mirror     :: Int,
+  mirror     :: IORef Mirror,
   mapperType :: Int
 }
 
@@ -52,7 +61,9 @@ parse bs = do
   prg <- VU.unsafeThaw $ VU.fromList $ BS.unpack prgRom
   sram <- VUM.replicate 0x2000 0
 
-  let mirror = (ctrl1 .&. 1) .|. (((ctrl1 `shiftR` 3) .&. 1) `shiftR` 1)
+  let mirrorV = (ctrl1 .&. 1) .|. (((ctrl1 `shiftR` 3) .&. 1) `shiftR` 1)
+  mirror <- newIORef $ toEnum mirrorV
+
   let mapper = (ctrl1 `shiftR` 4) .|. ((ctrl2 `shiftR` 4) `shiftL` 4)
 
   pure $ Cartridge chr prg sram mirror mapper

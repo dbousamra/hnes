@@ -30,10 +30,9 @@ import qualified Data.Vector                  as V
 import qualified Data.Vector.Storable.Mutable as VUM
 import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
-import           Emulator.Cartridge
+import           Emulator.Cartridge           as Cartridge
 import qualified Emulator.Controller          as Controller
 import qualified Emulator.Mapper              as Mapper
-import qualified Emulator.Mapper.Mapper2      as Mapper2
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
 
@@ -61,6 +60,7 @@ data Visibility = Hidden | Shown
 data Nes = Nes {
   cpu        :: CPU,
   ppu        :: PPU,
+  cart       :: Cartridge,
   mapper     :: Mapper.Mapper,
   controller :: Controller.Controller
 }
@@ -196,7 +196,7 @@ new cart = do
   ppu <- newPPU
   mapper <- Mapper.new cart
   controller <- Controller.new
-  pure $ Nes cpu ppu mapper controller
+  pure $ Nes cpu ppu cart mapper controller
 
 read :: Nes -> Address a -> IO a
 read nes addr = case addr of
@@ -257,7 +257,7 @@ readCpuMemory8 nes addr
   | addr == 0x4016 = Controller.read $ controller nes
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
   | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
-  | addr >= 0x6000 && addr <= 0xFFFF = Mapper.read (mapper nes) addr
+  | addr >= 0x6000 = Mapper.read (mapper nes) addr
   | otherwise = error "Erroneous read detected!"
 
 readCpuMemory16 :: Nes -> Word16 -> IO Word16
@@ -274,7 +274,7 @@ writeCpuMemory8 nes addr v
   | addr == 0x4016 = Controller.write (controller nes) v
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = pure ()
-  | addr >= 0x4020 && addr <= 0xFFFF = Mapper.write (mapper nes) addr v
+  | addr >= 0x6000 = Mapper.write (mapper nes) addr v
   | otherwise = error "Erroneous write detected!"
 
 writeCpuMemory16 :: Nes -> Word16 -> Word16 -> IO ()
@@ -565,14 +565,16 @@ writeData nes v = do
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
 
 writeNametableData :: Nes -> Word16 -> Word8 -> IO ()
-writeNametableData nes addr = VUM.unsafeWrite (nameTableData $ ppu nes) addr'
-  where mirror = Mapper.mirror (mapper nes)
-        addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+writeNametableData nes addr v = do
+  mirror <- readIORef $ Cartridge.mirror $ cart nes
+  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+  VUM.unsafeWrite (nameTableData $ ppu nes) addr' v
 
 readNametableData :: Nes -> Word16 -> IO Word8
-readNametableData nes addr = VUM.unsafeRead (nameTableData $ ppu nes) addr'
-  where mirror = Mapper.mirror (mapper nes)
-        addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+readNametableData nes addr = do
+  mirror <- readIORef $ Cartridge.mirror $ cart nes
+  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+  VUM.unsafeRead (nameTableData $ ppu nes) addr'
 
 writePalette :: Nes -> Word16 -> Word8 -> IO ()
 writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
@@ -584,11 +586,11 @@ mirroredPaletteAddr :: Word16 -> Word16
 mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
   where addr' = addr `mod` 32
 
-mirroredNametableAddr :: Word16 -> Int -> Word16
+mirroredNametableAddr :: Word16 -> Mirror -> Word16
 mirroredNametableAddr addr mirror = 0x2000 + lookup + offset
   where addr' = (addr - 0x2000) `mod` 0x1000
         tableIndex = fromIntegral $ addr' `div` 0x0400
-        lookup = ((nameTableMirrorLookup V.! mirror) V.! tableIndex) * 0x0400
+        lookup = ((nameTableMirrorLookup V.! fromEnum mirror) V.! tableIndex) * 0x0400
         offset = fromIntegral $ addr' `mod` 0x0400
 
 nameTableMirrorLookup :: V.Vector (V.Vector Word16)
