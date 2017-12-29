@@ -4,7 +4,7 @@ module Emulator.Mapper (
 ) where
 
 import           Data.Word
-import           Emulator.Cartridge      as Cartridge
+import           Emulator.Cartridge
 import qualified Emulator.Mapper.Mapper2 as Mapper2
 import qualified Emulator.Mapper.Mapper3 as Mapper3
 import qualified Emulator.Mapper.Mapper7 as Mapper7
@@ -15,8 +15,9 @@ data Mapper = Mapper
   }
 
 new :: Cartridge -> IO Mapper
-new cart = case Cartridge.mapperType cart of
+new cart = case mapperType cart of
   0     -> mapper2 cart
+  1     -> mapper2 cart
   2     -> mapper2 cart
   3     -> mapper3 cart
   7     -> mapper7 cart
