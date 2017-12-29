@@ -39,7 +39,7 @@ write :: Mapper7 -> Word16 -> Word8 -> IO ()
 write (Mapper7 Cartridge {..} prgBank) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chrRom addr' v
   | addr' >= 0x8000 = do
-    modifyIORef' prgBank (.&. 7)
+    modifyIORef' prgBank (const $ fromIntegral v .&. 7)
     let m = case v .&. 0x10 of
           0x00 -> MirrorSingle0
           0x10 -> MirrorSingle1
