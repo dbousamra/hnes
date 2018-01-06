@@ -39,6 +39,7 @@ data CPU = CPU
 newtype CPUEmulator a = CPUEmulator { unNes :: ReaderT CPU IO a }
   deriving (Monad, Applicative, Functor, MonadIO)
 
+{-# INLINE runCPUEmulator #-}
 runCPUEmulator :: CPUEmulator a ->  IO a
 runCPUEmulator  (CPUEmulator reader) = do
   cpu <- new

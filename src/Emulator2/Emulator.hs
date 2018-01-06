@@ -1,6 +1,7 @@
 module Emulator2.Emulator (
     new
   , step
+  , run
 ) where
 
 import           Control.Monad
@@ -24,9 +25,10 @@ step :: CPU.CPUEmulator ()
 step = do
   c <- CPU.step
   -- PPU.step ppu cpu
-  s <- CPU.trace
-  liftIO $ putStrLn s
+  -- s <- CPU.trace
+  -- liftIO $ putStrLn s
+  pure ()
 
 run :: IO ()
 run = CPU.runCPUEmulator $ do
-  replicateM_ 1000000 step
+  replicateM_ 2000000000 step
