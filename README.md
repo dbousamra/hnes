@@ -68,3 +68,21 @@ And to run:
   - [ ] VBlank timing for Battletoads edge case
 - [x] Controller input handled
 - [x] Performance tuning
+
+
+# Refactor
+
+## CPU
+- Own Memory
+- Own registers
+- Accesses cart
+- Doesn't access PPU directly - writes to memory addresses
+
+
+## PPU
+- Own memory
+- Own registers
+- Accesses cart
+- Accesses CPU to:
+  - Send interrupts
+  - Read DMA

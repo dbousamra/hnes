@@ -1,0 +1,68 @@
+digraph G {
+size="6,4";
+ratio="fill";
+u14[label="Main",style="filled",fillcolor="#bbffbb",penwidth="0"];
+subgraph cluster_0 {
+label="Emulator";
+color="#0000000F";
+style="filled";
+u0[label="Emulator",style="filled,bold",fillcolor="#bbffbb"];
+u1[label="CPU",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u2[label="Monad",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u3[label="Cartridge",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u4[label="Util",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u5[label="Nes",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u6[label="Controller",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u11[label="Opcode",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u12[label="Trace",style="filled",fillcolor="#ffffbb",penwidth="0"];
+u13[label="PPU",style="filled",fillcolor="#ffffbb",penwidth="0"];
+subgraph cluster_1 {
+label="Mapper";
+color="#0000000F";
+style="filled";
+u7[label="Mapper",style="filled,bold",fillcolor="#ffffbb"];
+u8[label="Mapper2",style="filled",fillcolor="#bbbbff",penwidth="0"];
+u9[label="Mapper3",style="filled",fillcolor="#bbbbff",penwidth="0"];
+u10[label="Mapper7",style="filled",fillcolor="#bbbbff",penwidth="0"];
+
+}
+
+}
+u0 -> u1;
+u0 -> u2;
+u0 -> u5;
+u0 -> u12;
+u0 -> u13;
+u1 -> u2;
+u1 -> u4;
+u1 -> u5;
+u1 -> u11;
+u1 -> u12;
+u2 -> u3;
+u2 -> u5;
+u3 -> u4;
+u5 -> u3;
+u5 -> u4;
+u5 -> u6;
+u5 -> u7;
+u7 -> u3;
+u7 -> u8;
+u7 -> u9;
+u7 -> u10;
+u8 -> u3;
+u8 -> u4;
+u9 -> u3;
+u9 -> u4;
+u10 -> u3;
+u10 -> u4;
+u11 -> u4;
+u12 -> u11;
+u13 -> u2;
+u13 -> u4;
+u13 -> u5;
+u14 -> u0;
+u14 -> u2;
+u14 -> u5;
+u14 -> u6;
+
+}

@@ -202,13 +202,13 @@ read :: Nes -> Address a -> IO a
 read nes addr = case addr of
   Cpu r -> readCPU nes r
   Ppu r -> readPPU nes r
-  Keys  -> readKeys nes
+  Keys  -> readKeys (controller nes)
 
 write :: Nes -> Address a -> a -> IO ()
 write nes addr v = case addr of
   Cpu r -> writeCPU nes r v
   Ppu r -> writePPU (ppu nes) r v
-  Keys  -> writeKeys nes v
+  Keys  -> writeKeys (controller nes) v
 
 newCPU :: IO CPU
 newCPU = do
@@ -221,7 +221,6 @@ newCPU = do
   ram <- VUM.replicate 65536 0x0
   cycles <- newIORef 0
   interrupt <- newIORef Nothing
-
   pure $ CPU pc sp a x y p ram cycles interrupt
 
 writeCPU :: Nes -> Cpu a -> a -> IO ()
@@ -406,16 +405,16 @@ writePPU ppu addr v = case addr of
 readPPUMemory :: Nes -> Word16 -> IO Word8
 readPPUMemory nes addr
   | addr' < 0x2000 = Mapper.read (mapper nes) addr'
-  | addr' < 0x3F00 = readNametableData nes addr'
-  | addr' < 0x4000 = readPalette nes addr'
+  | addr' < 0x3F00 = readNametableData (ppu nes) (cart nes) addr'
+  | addr' < 0x4000 = readPalette (ppu nes) addr'
   | otherwise = error "Erroneous read detected!"
   where addr' = addr `mod` 0x4000
 
-writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
-writePPUMemory nes addr v
-  | addr' < 0x2000 = Mapper.write (mapper nes) addr' v
-  | addr' < 0x3F00 = writeNametableData nes addr' v
-  | addr' < 0x4000 = writePalette nes addr' v
+writePPUMemory :: PPU -> Cartridge -> Mapper.Mapper -> Word16 -> Word8 -> IO ()
+writePPUMemory ppu cart mapper addr v
+  | addr' < 0x2000 = Mapper.write mapper addr' v
+  | addr' < 0x3F00 = writeNametableData ppu cart addr' v
+  | addr' < 0x4000 = writePalette ppu addr' v
   | otherwise = error "Erroneous write detected!"
   where addr' = addr `mod` 0x4000
 
@@ -557,30 +556,32 @@ writeDMA nes v = do
 writeData :: Nes -> Word8 -> IO ()
 writeData nes v = do
   addr <- readIORef $ currentVramAddress (ppu nes)
-  writePPUMemory nes addr v
+  writePPUMemory (ppu nes) (cart nes) (mapper nes) addr v
   incMode <- readIORef $ incrementMode (ppu nes)
   let inc = case incMode of
         Horizontal -> 1
         Vertical   -> 32
   modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
 
-writeNametableData :: Nes -> Word16 -> Word8 -> IO ()
-writeNametableData nes addr v = do
-  mirror <- readIORef $ Cartridge.mirror $ cart nes
+-- PPU Stuff
+
+writeNametableData :: PPU -> Cartridge -> Word16 -> Word8 -> IO ()
+writeNametableData ppu cart addr v = do
+  mirror <- readIORef $ Cartridge.mirror cart
   let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
-  VUM.unsafeWrite (nameTableData $ ppu nes) addr' v
+  VUM.unsafeWrite (nameTableData ppu) addr' v
 
-readNametableData :: Nes -> Word16 -> IO Word8
-readNametableData nes addr = do
-  mirror <- readIORef $ Cartridge.mirror $ cart nes
+readNametableData :: PPU -> Cartridge -> Word16 -> IO Word8
+readNametableData ppu cart addr = do
+  mirror <- readIORef $ Cartridge.mirror cart
   let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
-  VUM.unsafeRead (nameTableData $ ppu nes) addr'
+  VUM.unsafeRead (nameTableData ppu) addr'
 
-writePalette :: Nes -> Word16 -> Word8 -> IO ()
-writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
+writePalette :: PPU -> Word16 -> Word8 -> IO ()
+writePalette ppu addr = VUM.unsafeWrite (paletteData ppu) (fromIntegral $ mirroredPaletteAddr addr)
 
-readPalette :: Nes -> Word16 -> IO Word8
-readPalette nes addr = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
+readPalette :: PPU -> Word16 -> IO Word8
+readPalette ppu addr = VUM.unsafeRead (paletteData ppu) (fromIntegral $ mirroredPaletteAddr addr)
 
 mirroredPaletteAddr :: Word16 -> Word16
 mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
@@ -602,12 +603,6 @@ nameTableMirrorLookup = V.fromList (fmap V.fromList [
     [0, 1, 2, 3]
   ])
 
-writeKeys :: Nes -> Set Controller.Key -> IO ()
-writeKeys = Controller.setKeysDown . controller
-
-readKeys :: Nes -> IO (Set Controller.Key)
-readKeys = Controller.readKeysDown . controller
-
 writeScreen :: PPU -> Coords -> Color -> IO ()
 writeScreen ppu coords color = do
   let (r, g, b) = color
@@ -618,3 +613,11 @@ writeScreen ppu coords color = do
 
 translateXY :: Coords -> Int -> Int
 translateXY (x, y) width = x + (y * width)
+
+-- Controller stuff
+
+writeKeys :: Controller.Controller -> Set Controller.Key -> IO ()
+writeKeys = Controller.setKeysDown
+
+readKeys :: Controller.Controller -> IO (Set Controller.Key)
+readKeys = Controller.readKeysDown
