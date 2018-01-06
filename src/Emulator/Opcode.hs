@@ -48,7 +48,7 @@ data Opcode = Opcode {
   mnem            :: Mnemonic,
   mode            :: AddressMode,
   len             :: Int,
-  cyc             :: Int,
+  cycles          :: Int,
   pageCrossCycles :: Int
 } deriving (Eq)
 

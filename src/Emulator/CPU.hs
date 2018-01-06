@@ -13,7 +13,7 @@ import           Emulator.Nes
 import           Emulator.Opcode
 import           Emulator.Trace         (Trace (..), renderTrace)
 import           Emulator.Util
-import           Prelude                hiding (and, compare)
+import           Prelude                hiding (and, compare, cycles)
 
 reset :: IOEmulator ()
 reset = do

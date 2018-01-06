@@ -1,17 +1,24 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Emulator2.CPU (
     CPU(..)
+  , CPUEmulator(..)
+  , runCPUEmulator
   , new
   , step
   , trace
 ) where
 
+import           Control.Monad.IO.Class       (liftIO)
+import           Control.Monad.Reader         (ReaderT, ask, runReaderT)
+import           Control.Monad.Trans          (MonadIO, lift)
 import           Data.Bits
 import           Data.IORef
 import qualified Data.Vector.Storable.Mutable as VUM
 import           Data.Word
 import           Emulator.Opcode
 import           Emulator.Util
-import           Prelude                      hiding (cycles, read)
+import           Prelude                      hiding (cycle, cycles, read)
 
 data Interrupt
   = IRQ
@@ -25,23 +32,48 @@ data CPU = CPU
   , y         :: IORef Word8
   , p         :: IORef Word8
   , ram       :: VUM.IOVector Word8
-  , cycles    :: IORef Int
+  , cycle     :: IORef Int
   , interrupt :: IORef (Maybe Interrupt)
   }
 
-step :: CPU -> IO Int
-step cpu = do
+newtype CPUEmulator a = CPUEmulator { unNes :: ReaderT CPU IO a }
+  deriving (Monad, Applicative, Functor, MonadIO)
+
+runCPUEmulator :: CPUEmulator a ->  IO a
+runCPUEmulator  (CPUEmulator reader) = do
+  cpu <- new
+  runReaderT reader cpu
+
+{-# INLINE load #-}
+load :: (CPU -> IORef a) -> CPUEmulator a
+load field = CPUEmulator $ do
+  cpu <- ask
+  lift $ readIORef $ field cpu
+
+{-# INLINE store #-}
+store :: (CPU -> IORef a) -> a -> CPUEmulator ()
+store field v = modify field (const v)
+
+{-# INLINE modify #-}
+modify :: (CPU -> IORef a) -> (a -> a) -> CPUEmulator ()
+modify field v = CPUEmulator $ do
+  cpu <- ask
+  lift $ modifyIORef' (field cpu) v
+
+step :: CPUEmulator Int
+step = do
   -- Start counting the number of cycles.
   -- Some of the opcodes (the branch ones)
   -- modify the cycle count directly due to page crosses
-  startingCycles <- readIORef (cycles cpu)
+  startingCycles <- load cycle
   -- handleInterrupts
-  opcode <- loadNextOpcode cpu
-  (pageCrossed, addr) <- addressPageCrossForMode cpu (mode opcode)
-  addCycles cpu $ getCycles opcode pageCrossed
-  incrementPc cpu opcode
+  -- opcode <- loadNextOpcode
+  -- (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
+  -- addCycles $ getCycles opcode pageCrossed
+  addCycles 1
+  -- incrementPc opcode
   -- runInstruction opcode addr
-  endingCycles <- readIORef (cycles cpu)
+  endingCycles <- load cycle
   pure $ endingCycles - startingCycles
 
 new :: IO CPU
@@ -57,16 +89,16 @@ new = do
   interrupt <- newIORef Nothing
   pure $ CPU pc sp a x y p ram cycles interrupt
 
-reset :: CPU -> IO ()
-reset cpu = do
-  v <- readIORef (pc cpu)
-  modifyIORef' (pc cpu) (const v)
-  modifyIORef' (sp cpu) (const 0xFD)
-  modifyIORef' (p cpu) (const 0x24)
+reset :: CPUEmulator ()
+reset = do
+  v <- load pc
+  store pc v
+  store sp 0xFD
+  store p 0x24
 
-read :: CPU -> Word16 -> IO Word8
-read cpu addr
-  | addr < 0x2000 = readCPURam cpu addr
+read :: Word16 -> CPUEmulator Word8
+read addr
+  | addr < 0x2000 = readCPURam addr
   -- | addr < 0x4000 = (readPPURegister cpu) addr
   -- | addr == 0x4016 = (readController cpu)
   | addr >= 0x4000 && addr <= 0x4017 = pure 0
@@ -74,95 +106,96 @@ read cpu addr
   -- | addr >= 0x6000 = (readMapper cpu) addr
   | otherwise = error "Erroneous read detected!"
 
-read16 :: CPU -> Word16 -> IO Word16
-read16 cpu addr = do
-  lo <- read cpu addr
-  hi <- read cpu (addr + 1)
+read16 :: Word16 -> CPUEmulator Word16
+read16 addr = do
+  lo <- read addr
+  hi <- read $ addr + 1
   pure $ makeW16 lo hi
 
-read16Bug :: CPU -> Word16 -> IO Word16
-read16Bug cpu addr = do
-  lo <- read cpu addr
-  hi <- read cpu $ (addr .&. 0xFF00) .|. (toWord16 $ (toWord8 addr) + 1)
+read16Bug :: Word16 -> CPUEmulator Word16
+read16Bug addr = do
+  lo <- read addr
+  hi <- read $ (addr .&. 0xFF00) .|. (toWord16 $ (toWord8 addr) + 1)
   pure $ makeW16 lo hi
 
-readCPURam :: CPU -> Word16 -> IO Word8
-readCPURam cpu addr = VUM.unsafeRead (ram cpu) addr'
-  where addr' = fromIntegral addr `mod` 0x0800
+readCPURam :: Word16 -> CPUEmulator Word8
+readCPURam addr = pure 1
+-- readCPURam addr = VUM.unsafeRead (ram cpu) addr'
+  -- where addr' = fromIntegral addr `mod` 0x0800
 
-loadNextOpcode :: CPU -> IO Opcode
-loadNextOpcode cpu = do
-  pcv <- readIORef (pc cpu)
-  av <- read cpu pcv
+loadNextOpcode :: CPUEmulator Opcode
+loadNextOpcode = do
+  pcv <- load pc
+  av <- read pcv
   pure $ decodeOpcode av
 
-addressPageCrossForMode :: CPU -> AddressMode -> IO (Bool, Word16)
-addressPageCrossForMode cpu mode = case mode of
+addressPageCrossForMode :: AddressMode -> CPUEmulator (Bool, Word16)
+addressPageCrossForMode mode = case mode of
   Absolute -> do
-    pcv <- readIORef (pc cpu)
-    addrV <- read16 cpu (pcv + 1)
+    pcv <- load pc
+    addrV <- read16 $ pcv + 1
     pure (False, addrV)
   AbsoluteX -> do
-    pcv <- readIORef (pc cpu)
-    xv <- readIORef (x cpu)
-    v <- read16 cpu (pcv + 1)
+    pcv <- load pc
+    xv <- load x
+    v <- read16 $ pcv + 1
     let addrV = v + toWord16 xv
     let pageCrossed = differentPages (addrV - (toWord16 xv)) addrV
     pure (pageCrossed, addrV)
   AbsoluteY -> do
-    pcv <- readIORef (pc cpu)
-    yv <- readIORef (y cpu)
-    v <- read16 cpu (pcv + 1)
+    pcv <- load pc
+    yv <- load y
+    v <- read16 $ pcv + 1
     let addrV = v + toWord16 yv
     let pageCrossed = differentPages (addrV - (toWord16 yv)) addrV
     pure (pageCrossed, addrV)
   Accumulator ->
     pure (False, 0)
   Immediate -> do
-    pcv <- readIORef (pc cpu)
+    pcv <- load pc
     pure (False, pcv + 1)
   Implied ->
     pure (False, 0)
   Indirect -> do
-    pcv <- readIORef (pc cpu)
-    addr <- read16 cpu (pcv + 1)
-    yo <- read16Bug cpu addr
+    pcv <- load pc
+    addr <- read16 $ pcv + 1
+    yo <- read16Bug addr
     pure (False, yo)
   IndirectIndexed -> do
-    pcv <- readIORef (pc cpu)
-    yv <- readIORef (y cpu)
-    v <- read cpu $ pcv + 1
-    addr <- read16Bug cpu $ toWord16 v
+    pcv <- load pc
+    yv <- load y
+    v <- read $ pcv + 1
+    addr <- read16Bug $ toWord16 v
     let addrV = addr + toWord16 yv
     let pageCrossed = differentPages (addrV - (toWord16 yv)) addrV
     pure (pageCrossed, addrV)
   IndexedIndirect -> do
-    pcv <- readIORef (pc cpu)
-    xv <- readIORef (x cpu)
-    v <- read cpu $ pcv + 1
-    addrV <- read16Bug cpu $ toWord16 (v + xv)
+    pcv <- load pc
+    xv <- load x
+    v <- read $ pcv + 1
+    addrV <- read16Bug $ toWord16 (v + xv)
     pure (False, addrV)
   Relative -> do
-    pcv <- readIORef (pc cpu)
-    offset16 <- read16 cpu (pcv + 1)
+    pcv <- load pc
+    offset16 <- read16 $ pcv + 1
     let offset8 = firstNibble offset16
     if offset8 < 0x80 then
       pure (False, pcv + 2 + offset8)
     else
       pure (False, pcv + 2 + offset8 - 0x100)
   ZeroPage -> do
-    pcv <- readIORef (pc cpu)
-    v <- read cpu (pcv + 1)
+    pcv <- load pc
+    v <- read $ pcv + 1
     pure (False, toWord16 v)
   ZeroPageX -> do
-    pcv <- readIORef (pc cpu)
-    xv <- readIORef (x cpu)
-    v <- read cpu (pcv + 1)
+    pcv <- load pc
+    xv <- load x
+    v <- read $ pcv + 1
     pure (False, toWord16 $ v + xv)
   ZeroPageY -> do
-    pcv <- readIORef (pc cpu)
-    yv <- readIORef (y cpu)
-    v <- read cpu (pcv + 1)
+    pcv <- load pc
+    yv <- load y
+    v <- read $ pcv + 1
     pure (False, toWord16 $ v + yv)
 
 differentPages :: Word16 -> Word16 -> Bool
@@ -170,17 +203,17 @@ differentPages a b = (a .&. 0xFF00) /= (b .&. 0xFF00)
 
 getCycles :: Opcode -> Bool -> Int
 getCycles opcode pageCrossed = if pageCrossed
-  then pageCrossCycles opcode + cyc opcode
-  else cyc opcode
+  then pageCrossCycles opcode + cycles opcode
+  else cycles opcode
 
-addCycles :: CPU -> Int -> IO ()
-addCycles cpu n = modifyIORef' (cycles cpu) (+ n)
+addCycles :: Int -> CPUEmulator ()
+addCycles n = modify cycle (+ n)
 
-incrementPc :: CPU -> Opcode -> IO ()
-incrementPc cpu opcode = modifyIORef' (pc cpu) (+ instrLength)
+incrementPc :: Opcode -> CPUEmulator ()
+incrementPc opcode = modify pc (+ instrLength)
   where instrLength = fromIntegral $ (len opcode)
 
-trace :: CPU -> IO String
-trace cpu = do
-  cycles <- readIORef (cycles cpu)
+trace :: CPUEmulator String
+trace = do
+  cycles <- load cycle
   pure $ "Cycles = " ++ show cycles

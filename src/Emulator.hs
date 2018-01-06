@@ -25,4 +25,3 @@ stepFrame = do
 
 reset :: IOEmulator ()
 reset = CPU.reset >> PPU.reset
-
