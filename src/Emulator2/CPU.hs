@@ -1,9 +1,6 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module Emulator2.CPU (
     CPU(..)
   , CPUEmulator(..)
-  , runCPUEmulator
   , new
   , step
   , trace
@@ -18,6 +15,7 @@ import qualified Data.Vector.Storable.Mutable as VUM
 import           Data.Word
 import           Emulator.Opcode
 import           Emulator.Util
+import           Emulator2.Monad
 import           Prelude                      hiding (cycle, cycles, read)
 
 data Interrupt
@@ -36,30 +34,7 @@ data CPU = CPU
   , interrupt :: IORef (Maybe Interrupt)
   }
 
-newtype CPUEmulator a = CPUEmulator { unNes :: ReaderT CPU IO a }
-  deriving (Monad, Applicative, Functor, MonadIO)
-
-{-# INLINE runCPUEmulator #-}
-runCPUEmulator :: CPUEmulator a ->  IO a
-runCPUEmulator  (CPUEmulator reader) = do
-  cpu <- new
-  runReaderT reader cpu
-
-{-# INLINE load #-}
-load :: (CPU -> IORef a) -> CPUEmulator a
-load field = CPUEmulator $ do
-  cpu <- ask
-  lift $ readIORef $ field cpu
-
-{-# INLINE store #-}
-store :: (CPU -> IORef a) -> a -> CPUEmulator ()
-store field v = modify field (const v)
-
-{-# INLINE modify #-}
-modify :: (CPU -> IORef a) -> (a -> a) -> CPUEmulator ()
-modify field v = CPUEmulator $ do
-  cpu <- ask
-  lift $ modifyIORef' (field cpu) v
+type CPUEmulator b = Emulator CPU b
 
 step :: CPUEmulator Int
 step = do
@@ -68,11 +43,10 @@ step = do
   -- modify the cycle count directly due to page crosses
   startingCycles <- load cycle
   -- handleInterrupts
-  -- opcode <- loadNextOpcode
-  -- (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
-  -- addCycles $ getCycles opcode pageCrossed
-  addCycles 1
-  -- incrementPc opcode
+  opcode <- loadNextOpcode
+  (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
+  addCycles $ getCycles opcode pageCrossed
+  incrementPc opcode
   -- runInstruction opcode addr
   endingCycles <- load cycle
   pure $ endingCycles - startingCycles
@@ -203,9 +177,10 @@ differentPages :: Word16 -> Word16 -> Bool
 differentPages a b = (a .&. 0xFF00) /= (b .&. 0xFF00)
 
 getCycles :: Opcode -> Bool -> Int
-getCycles opcode pageCrossed = if pageCrossed
-  then pageCrossCycles opcode + cycles opcode
-  else cycles opcode
+getCycles opcode pageCrossed =
+  if pageCrossed
+    then pageCrossCycles opcode + cycles opcode
+    else cycles opcode
 
 addCycles :: Int -> CPUEmulator ()
 addCycles n = modify cycle (+ n)
