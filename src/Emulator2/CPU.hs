@@ -36,6 +36,9 @@ data CPU = CPU
 
 type CPUEmulator b = Emulator CPU b
 
+-- storeCPU :: (a -> IORef b) -> b -> Emulator a ()
+-- storeCPU field v = modify field (const v)
+
 step :: CPUEmulator Int
 step = do
   -- Start counting the number of cycles.

@@ -10,7 +10,7 @@ module Emulator2.Monad (
 
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader   (ReaderT, ask, runReaderT)
-import           Control.Monad.Trans    (MonadIO, lift)
+import           Control.Monad.Trans    (MonadIO, MonadTrans, lift)
 import           Data.IORef
 
 newtype Emulator a b = Emulator { unNes :: ReaderT a IO b }

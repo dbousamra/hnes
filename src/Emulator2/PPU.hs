@@ -7,7 +7,8 @@ module Emulator2.PPU (
 import           Data.IORef
 import qualified Data.Vector.Storable.Mutable as VUM
 import           Data.Word
-import           Emulator2.CPU                (CPU)
+import           Emulator2.Monad
+import           Prelude                      hiding (cycle)
 
 
 data Interrupt
@@ -19,13 +20,17 @@ data PPUMemory = PPUMemory
   }
 
 data PPU = PPU
-  { ppuCycles   :: IORef Int
+  { cycle   :: IORef Int
   }
+
+type PPUEmulator b = Emulator PPU b
 
 new :: IO PPU
 new = do
   cycles <- newIORef 0
   pure $ PPU cycles
 
-step :: PPU -> CPU -> IO ()
-step ppu cpu = modifyIORef' (ppuCycles ppu) (+1)
+step :: PPUEmulator Int
+step = do
+  modify cycle (+1)
+  pure 1
