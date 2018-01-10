@@ -11,7 +11,7 @@ import           Emulator            (reset, stepFrame)
 import           Emulator.Controller as Controller
 import           Emulator.Monad
 import           Emulator.Nes
-import           SDL                 as SDL
+import           SDL
 import           SDL.Time
 import           System.Environment  (getArgs)
 
