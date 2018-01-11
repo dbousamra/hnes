@@ -11,42 +11,41 @@ import           Data.IORef
 import           Data.Maybe             (fromMaybe)
 import qualified Data.Vector            as V
 import           Data.Word
-import           Emulator.Monad
 import           Emulator.Nes
 import           Emulator.Util
 import           Prelude                hiding (cycle)
 
-reset :: IOEmulator ()
+reset :: Emulator ()
 reset = do
-  store (Ppu PpuCycles) 340
-  store (Ppu Scanline) 240
-  store (Ppu VerticalBlank) False
+  storePpu ppuCycles 340
+  storePpu scanline 240
+  storePpu verticalBlank False
 
-step :: IOEmulator ()
+step :: Emulator ()
 step = do
   (scanline, cycle) <- tick
   handleLinePhase scanline cycle
 
-tick :: IOEmulator Coords
+tick :: Emulator Coords
 tick = do
-  modify (Ppu PpuCycles) (+1)
-  cycles <- load $ Ppu PpuCycles
+  modifyPpu ppuCycles (+1)
+  cycles <- loadPpu ppuCycles
 
   when (cycles > 340) $ do
-    store (Ppu PpuCycles) 0
-    modify (Ppu Scanline) (+1)
-    scanline <- load (Ppu Scanline)
+    storePpu ppuCycles 0
+    modifyPpu scanline (+1)
+    scanline' <- loadPpu scanline
 
-    when (scanline > 261) $ do
-      store (Ppu Scanline) 0
-      modify (Ppu FrameCount) (+1)
+    when (scanline' > 261) $ do
+      storePpu scanline 0
+      modifyPpu frameCount (+1)
 
-  scanline' <- load $ Ppu Scanline
-  cycles' <- load $ Ppu PpuCycles
+  scanline' <- loadPpu scanline
+  cycles' <- loadPpu ppuCycles
   pure (scanline', cycles')
 
 {-# INLINE handleLinePhase #-}
-handleLinePhase :: Int -> Int -> IOEmulator ()
+handleLinePhase :: Int -> Int -> Emulator ()
 handleLinePhase scanline cycle = do
   let preLine = scanline == 261
   let visibleLine = scanline < 240
@@ -56,8 +55,8 @@ handleLinePhase scanline cycle = do
   let preFetchCycle = cycle >= 321 && cycle <= 336
   let fetchCycle = visibleCycle || (cycle >= 321 && cycle <= 336)
 
-  bgVisible <- load (Ppu BackgroundVisible)
-  spritesVisible <- load (Ppu SpritesVisible)
+  bgVisible <- loadPpu bgVisibility
+  spritesVisible <- loadPpu spriteVisibility
 
   let rendering = bgVisible || spritesVisible
 
@@ -68,7 +67,7 @@ handleLinePhase scanline cycle = do
     when (renderLine && fetchCycle) $
       fetch scanline cycle
 
-    when (preLine && cycle >= 280 && cycle <= 304) $
+    when (preLine && cycle >= 280 && cycle <= 304)
       copyY
 
     when (preLine || visibleLine) $ do
@@ -85,32 +84,32 @@ handleLinePhase scanline cycle = do
       when visibleLine $
         evaluateSprites scanline
 
-  when (scanline == 241 && cycle == 1) $
+  when (scanline == 241 && cycle == 1)
     enterVBlank
 
   when (preLine && cycle == 1) $ do
     exitVBlank
-    store (Ppu SpriteZeroHit) False
+    storePpu spriteZeroHit False
 
-renderPixel :: Int -> Int -> IOEmulator ()
+renderPixel :: Int -> Int -> Emulator ()
 renderPixel scanline cycle = do
   let coords = (cycle - 1, scanline)
   bgColor <- getBackgroundPixel coords
   spriteColor <- getSpritePixel coords
   finalColor <- getComposedColor coords bgColor spriteColor
-  store (Ppu $ Screen coords) finalColor
+  writeScreen coords finalColor
 
-getBackgroundPixel :: Coords -> IOEmulator Word8
+getBackgroundPixel :: Coords -> Emulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
-  fineX <- load (Ppu FineX)
+  fineX <- loadPpu fineX
   let scrolled = tileData `shiftR` fromIntegral ((7 - fineX) * 4)
   pure $ fromIntegral (scrolled .&. 0x0F)
 
-getSpritePixel :: Coords -> IOEmulator (Maybe (Sprite, Word8))
+getSpritePixel :: Coords -> Emulator (Maybe (Sprite, Word8))
 getSpritePixel coords = do
-  sprites <- load (Ppu Sprites)
-  let colors = V.map getColor sprites
+  sprites' <- loadPpu sprites
+  let colors = V.map getColor sprites'
   pure $ msum colors
   where
     getColor :: Sprite -> Maybe (Sprite, Word8)
@@ -126,10 +125,10 @@ getSpritePixel coords = do
       else
         Nothing
 
-getComposedColor :: Coords -> Word8 -> Maybe (Sprite, Word8) -> IOEmulator Color
+getComposedColor :: Coords -> Word8 -> Maybe (Sprite, Word8) -> Emulator Color
 getComposedColor (x, y) bg sprite = do
   color <- getColor
-  index <- load $ Ppu $ PpuMemory8 (0x3F00 + fromIntegral color)
+  index <- readPpuMemory $ 0x3F00 + fromIntegral color
   pure $ getPaletteColor (index `mod` 64)
   where
     b = bg `mod` 4 /= 0
@@ -142,19 +141,15 @@ getComposedColor (x, y) bg sprite = do
       | not b && s = pure $ sc .|. 0x10
       | b && not s = pure bg
       | otherwise = do
-        store (Ppu SpriteZeroHit) (ind == 0 && x < 255)
+        storePpu spriteZeroHit (ind == 0 && x < 255)
         if priority == 0 then
           pure $ sc .|. 0x10
         else
           pure bg
 
-readPalette :: Word16 -> IOEmulator Word8
-readPalette addr = load $ Ppu $ PaletteData addr'
-  where addr' = if (addr >= 16) && (addr `mod` 4 == 0) then addr - 16 else addr
-
-fetch :: Int -> Int -> IOEmulator ()
+fetch :: Int -> Int -> Emulator ()
 fetch scanline cycle = do
-  modify (Ppu TileData) (`shiftL` 4)
+  modifyPpu tileData (`shiftL` 4)
   case cycle `mod` 8 of
     1 -> fetchNameTableValue
     3 -> fetchAttributeTableValue
@@ -163,132 +158,127 @@ fetch scanline cycle = do
     0 -> storeTileData
     _ -> idle
 
-fetchNameTableValue :: IOEmulator ()
+fetchNameTableValue :: Emulator ()
 fetchNameTableValue = do
-  v <- load $ Ppu CurrentVRamAddr
-  let addr = PpuMemory8 (0x2000 .|. (v .&. 0x0FFF))
-  ntv <- load $ Ppu addr
-  store (Ppu NameTableByte) ntv
+  v <- loadPpu currentVramAddress
+  ntv <- readPpuMemory $ 0x2000 .|. (v .&. 0x0FFF)
+  storePpu nameTableByte ntv
 
-fetchAttributeTableValue :: IOEmulator ()
+fetchAttributeTableValue :: Emulator ()
 fetchAttributeTableValue = do
-  v <- load $ Ppu CurrentVRamAddr
-  let addr = PpuMemory8 $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `shiftR` 4) .&. 0x38) .|. ((v `shiftR` 2) .&. 0x07)
-  v' <- load $ Ppu addr
+  v <- loadPpu currentVramAddress
+  v' <- readPpuMemory $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `shiftR` 4) .&. 0x38) .|. ((v `shiftR` 2) .&. 0x07)
   let shift = fromIntegral $ ((v `shiftR` 4) .&. 4) .|. (v .&. 2)
   let atv = ((v' `shiftR` shift) .&. 3) `shiftL` 2
-  store (Ppu AttrTableByte) atv
+  storePpu attrTableByte atv
 
-fetchLowTileValue :: IOEmulator ()
+fetchLowTileValue :: Emulator ()
 fetchLowTileValue = do
-  v <- load $ Ppu CurrentVRamAddr
+  v <- loadPpu currentVramAddress
   let fineY = (v `shiftR` 12) .&. 7
-  bt <- load $ Ppu BackgroundTableAddr
-  ntv <- load $ Ppu NameTableByte
-  let addr = PpuMemory8 $ bt + (fromIntegral ntv) * 16 + fineY
-  ltv <- load $ Ppu addr
-  store (Ppu LoTileByte) ltv
+  bt <- loadPpu bgTable
+  ntv <- loadPpu nameTableByte
+  ltv <- readPpuMemory $ bt + fromIntegral ntv * 16 + fineY
+  storePpu loTileByte ltv
 
-fetchHighTileValue :: IOEmulator ()
+fetchHighTileValue :: Emulator ()
 fetchHighTileValue = do
-  ntv <- load $ Ppu NameTableByte
-  v <- load $ Ppu CurrentVRamAddr
-  bt <- load $ Ppu BackgroundTableAddr
+  ntv <- loadPpu nameTableByte
+  v <- loadPpu currentVramAddress
+  bt <- loadPpu bgTable
   let fineY = (v `shiftR` 12) .&. 7
-  let addr = PpuMemory8 $ bt + (fromIntegral ntv) * 16 + fineY + 8
-  htv <- load $ Ppu addr
-  store (Ppu HiTileByte) htv
+  htv <- readPpuMemory $ bt + fromIntegral ntv * 16 + fineY + 8
+  storePpu hiTileByte htv
 
-fetchTileData :: IOEmulator Word32
+fetchTileData :: Emulator Word32
 fetchTileData = do
-  tileData <- load $ Ppu TileData
-  pure $ fromIntegral $ tileData `shiftR` 32
+  td <- loadPpu tileData
+  pure $ fromIntegral $ td `shiftR` 32
 
-storeTileData :: IOEmulator ()
+storeTileData :: Emulator ()
 storeTileData = do
-  lotv <- load $ Ppu LoTileByte
-  hitv <- load $ Ppu HiTileByte
-  atv <- load $ Ppu AttrTableByte
+  lotv <- loadPpu loTileByte
+  hitv <- loadPpu hiTileByte
+  atv <- loadPpu attrTableByte
 
-  let tileData = do
+  let td = do
         i <- V.fromList [0..7]
         let p1 = ((lotv `shiftL` i) .&. 0x80) `shiftR` 7
         let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
         pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
 
-  let tileData' = V.foldl' op 0 tileData
+  let td' = V.foldl' op 0 td
        where op acc i = (acc `shiftL` 4) .|. i
 
+  modifyPpu tileData (\x -> x .|. fromIntegral td')
 
-  modify (Ppu TileData) (\x -> x .|. (fromIntegral tileData'))
 
-
-copyY :: IOEmulator ()
+copyY :: Emulator ()
 copyY = do
-  tv <- load (Ppu TempVRamAddr)
-  cv <- load (Ppu CurrentVRamAddr)
-  store (Ppu CurrentVRamAddr) ((cv .&. 0x841F) .|. (tv .&. 0x7BE0))
+  tv <- loadPpu tempVramAddress
+  cv <- loadPpu currentVramAddress
+  storePpu currentVramAddress ((cv .&. 0x841F) .|. (tv .&. 0x7BE0))
 
-copyX :: IOEmulator ()
+copyX :: Emulator ()
 copyX = do
-  tv <- load (Ppu TempVRamAddr)
-  cv <- load (Ppu CurrentVRamAddr)
-  store (Ppu CurrentVRamAddr) ((cv .&. 0xFBE0) .|. (tv .&. 0x041F))
+  tv <- loadPpu tempVramAddress
+  cv <- loadPpu currentVramAddress
+  storePpu currentVramAddress ((cv .&. 0xFBE0) .|. (tv .&. 0x041F))
 
-incrementX :: IOEmulator ()
+incrementX :: Emulator ()
 incrementX = do
-  v <- load $ Ppu CurrentVRamAddr
+  v <- loadPpu currentVramAddress
   if v .&. 0x001F == 31 then do
-    modify (Ppu CurrentVRamAddr) (.&. 0xFFE0)
-    modify (Ppu CurrentVRamAddr) (`xor` 0x0400)
+    modifyPpu currentVramAddress (.&. 0xFFE0)
+    modifyPpu currentVramAddress (`xor` 0x0400)
   else
-    modify (Ppu CurrentVRamAddr) (+ 1)
+    modifyPpu currentVramAddress (+ 1)
 
-incrementY :: IOEmulator ()
+incrementY :: Emulator ()
 incrementY = do
-  v <- load $ Ppu CurrentVRamAddr
+  v <- loadPpu currentVramAddress
   if v .&. 0x7000 /= 0x7000 then
-    modify (Ppu CurrentVRamAddr) (+ 0x1000)
+    modifyPpu currentVramAddress (+ 0x1000)
   else do
-    modify (Ppu CurrentVRamAddr) (.&. 0x8FFF)
+    modifyPpu currentVramAddress (.&. 0x8FFF)
     let y = (v .&. 0x03E0) `shiftR` 5
 
     y' <- if y == 29 then do
-      modify (Ppu CurrentVRamAddr) (`xor` 0x0800)
+      modifyPpu currentVramAddress (`xor` 0x0800)
       pure 0
     else if y == 31 then
       pure 0
     else
       pure $ y + 1
 
-    v' <- load $ Ppu CurrentVRamAddr
-    store (Ppu CurrentVRamAddr) ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
+    v' <- loadPpu currentVramAddress
+    storePpu currentVramAddress ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
 
-evaluateSprites :: Int -> IOEmulator ()
+evaluateSprites :: Int -> Emulator ()
 evaluateSprites scanline = do
-  spriteSize <- load $ Ppu SpriteSize
-  sprites <- traverse (getSpriteAt scanline spriteSize) (V.fromList [0..63])
-  let visibleSprites = V.take 8 (catMaybesV sprites)
-  store (Ppu Sprites) visibleSprites
+  spriteSize <- loadPpu spriteSize
+  allSprites <- traverse (getSpriteAt scanline spriteSize) (V.fromList [0..63])
+  let visibleSprites = V.take 8 (catMaybesV allSprites)
+  storePpu sprites visibleSprites
 
-getSpriteAt :: Int -> SpriteSize -> Int -> IOEmulator (Maybe Sprite)
+getSpriteAt :: Int -> SpriteSize -> Int -> Emulator (Maybe Sprite)
 getSpriteAt scanline size i = do
   let baseOffset = fromIntegral $ i * 4
-  y <- load (Ppu $ OamData $ baseOffset + 0)
+  y <- readOAMData $ baseOffset + 0
   let row =  scanline - fromIntegral y
 
   if isSpriteVisible row size then do
-    tileIndexByte <- load (Ppu $ OamData $ baseOffset + 1)
-    attrByte <- load (Ppu $ OamData $ baseOffset + 2)
-    x <- load (Ppu $ OamData $ baseOffset + 3)
+    tileIndexByte <- readOAMData $ baseOffset + 1
+    attrByte <- readOAMData $ baseOffset + 2
+    x <- readOAMData $ baseOffset + 3
     addr <- getSpriteAddress row size attrByte tileIndexByte
-    loTileByte <- load (Ppu $ PpuMemory8 addr)
-    hiTileByte <- load (Ppu $ PpuMemory8 $ addr + 8)
+    loTileByte <- readPpuMemory addr
+    hiTileByte <- readPpuMemory $ addr + 8
     let spritePattern = decodeSpritePattern attrByte loTileByte hiTileByte
     let priority = (attrByte `shiftR` 5) .&. 1
-    pure $ Just $ Sprite i (fromIntegral x, fromIntegral $ y) tileIndexByte attrByte spritePattern priority
+    pure $ Just $ Sprite i (fromIntegral x, fromIntegral y) tileIndexByte attrByte spritePattern priority
   else
-    pure $ Nothing
+    pure Nothing
 
 decodeSpritePattern :: Word8 -> Word8 -> Word8 -> Word32
 decodeSpritePattern attr lo hi = tileData'
@@ -310,18 +300,18 @@ decodeSpritePattern attr lo hi = tileData'
   tileData' = V.foldl' op 0 tileData
        where op acc i = (acc `shiftL` 4) .|. i
 
-getSpriteAddress :: Int -> SpriteSize -> Word8 -> Word8 -> IOEmulator Word16
+getSpriteAddress :: Int -> SpriteSize -> Word8 -> Word8 -> Emulator Word16
 getSpriteAddress row size attr tile = case size of
   Normal -> do
     let row' = if attr .&. 0x80 == 0x80 then 7 - row else row
-    table <- load (Ppu SpriteTableAddr)
-    pure $ table + (fromIntegral tile) * 16 + (fromIntegral row')
+    table <- loadPpu spriteTable
+    pure $ table + fromIntegral tile * 16 + fromIntegral row'
   Double -> do
     let row' = if attr .&. 0x80 == 0x80 then 15 - row else row
     let table = tile .&. 1
     let tile' = tile .&. 0xFE
-    let (tile'', row'') = if (row' > 7) then (tile' + 1, row' - 8) else (tile', row')
-    pure $ (0x1000 * fromIntegral table) + (fromIntegral tile'') * 16 + (fromIntegral row'')
+    let (tile'', row'') = if row' > 7 then (tile' + 1, row' - 8) else (tile', row')
+    pure $ (0x1000 * fromIntegral table) + fromIntegral tile'' * 16 + fromIntegral row''
 
 isSpriteVisible :: Int -> SpriteSize -> Bool
 isSpriteVisible row spriteSize = row >= 0 && row < h
@@ -330,24 +320,22 @@ isSpriteVisible row spriteSize = row >= 0 && row < h
           Normal -> 8
           Double -> 16
 
-enterVBlank :: IOEmulator ()
+enterVBlank :: Emulator ()
 enterVBlank = do
-  store (Ppu VerticalBlank) True
-  generateNMI <- load (Ppu GenerateNMI)
-  when generateNMI $ store (Cpu Interrupt) (Just NMI)
+  storePpu verticalBlank True
+  generateNMI <- loadPpu nmiEnabled
+  when generateNMI $ storeCpu interrupt (Just NMI)
 
-exitVBlank :: IOEmulator ()
-exitVBlank = store (Ppu VerticalBlank) False
+exitVBlank :: Emulator ()
+exitVBlank = storePpu verticalBlank False
 
-idle :: IOEmulator ()
+idle :: Emulator ()
 idle = pure ()
 
 getPaletteColor :: Word8 -> Color
-getPaletteColor index = palette V.! fromIntegral index
-
-palette :: V.Vector Color
-palette = V.fromList
-  [ (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88), (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
+getPaletteColor index = palette V.! fromIntegral index where
+  palette = V.fromList [
+    (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88), (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
     (0x5C, 0x00, 0x7E), (0x6E, 0x00, 0x40), (0x6C, 0x06, 0x00), (0x56, 0x1D, 0x00),
     (0x33, 0x35, 0x00), (0x0B, 0x48, 0x00), (0x00, 0x52, 0x00), (0x00, 0x4F, 0x08),
     (0x00, 0x40, 0x4D), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00), (0x00, 0x00, 0x00),

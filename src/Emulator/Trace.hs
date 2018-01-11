@@ -1,9 +1,13 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+
 module Emulator.Trace (
     Trace(..)
   , renderTrace
+  , mkTrace
 ) where
 
 import           Data.Word
+import           Emulator.Nes
 import           Emulator.Opcode
 import           Text.Printf
 
@@ -23,6 +27,23 @@ data Trace = Trace {
 
 instance Show Trace where
   show = renderTrace
+
+mkTrace :: Opcode -> Emulator Trace
+mkTrace op = do
+  pcv <- loadCpu pc
+  a0 <- readCpuMemory8 pcv
+  a1 <- readCpuMemory8 (pcv + 1)
+  a2 <- readCpuMemory8 (pcv + 2)
+  spv <- loadCpu sp
+  av  <- loadCpu a
+  xv  <- loadCpu x
+  yv  <- loadCpu y
+  pv  <- loadCpu p
+  cycles <- loadCpu cpuCycles
+  let instrLength = len op
+  let a1R = if instrLength < 2 then 0x0 else a1
+  let a2R = if instrLength < 3 then 0x0 else a2
+  pure (Trace pcv spv av xv yv pv op a0 a1R a2R ((cycles * 3) `mod` 341))
 
 renderTrace :: Trace -> String
 renderTrace (Trace pcv spv av xv yv pv (Opcode _ mnem _ _ _ _) a0 a1 a2 cyc) =

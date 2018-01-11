@@ -1,8 +1,12 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE DuplicateRecordFields      #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Emulator.Nes (
     Nes(..)
+  , CPU(..)
+  , PPU(..)
+  , Emulator(..)
   , Sprite(..)
   , Coords
   , Color
@@ -12,18 +16,32 @@ module Emulator.Nes (
   , ColorMode(..)
   , Visibility(..)
   , Interrupt(..)
-  , Address(..)
-  , Cpu(..)
-  , Ppu(..)
-  , read
-  , write
   , new
+  , runEmulator
+  , loadCpu
+  , storeCpu
+  , modifyCpu
+  , loadPpu
+  , storePpu
+  , modifyPpu
+  , readCpuMemory8
+  , readCpuMemory16
+  , writeCpuMemory8
+  , writeCpuMemory16
+  , readPpuMemory
+  , readOAMData
+  , readPalette
+  , storeKeys
+  , loadKeys
+  , writeScreen
+  , loadScreen
 ) where
 
 import           Control.Monad
 import           Control.Monad.ST
 import           Data.Bits                    (setBit, shiftL, shiftR, testBit, (.&.),
                                                (.|.))
+import qualified Data.ByteString              as BS
 import           Data.IORef
 import           Data.Set                     as Set
 import qualified Data.Vector                  as V
@@ -35,6 +53,11 @@ import qualified Emulator.Controller          as Controller
 import qualified Emulator.Mapper              as Mapper
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
+
+
+import           Control.Monad.IO.Class       (liftIO)
+import           Control.Monad.Reader         (MonadReader, ReaderT, ask, runReaderT)
+import           Control.Monad.Trans          (MonadIO, lift)
 
 data Sprite = Sprite {
   sIndex         :: Int,
@@ -57,6 +80,11 @@ data ColorMode = Color | Grayscale
 
 data Visibility = Hidden | Shown
 
+data Interrupt
+  = IRQ
+  | NMI
+  deriving (Eq, Show)
+
 data Nes = Nes {
   cpu        :: CPU,
   ppu        :: PPU,
@@ -65,21 +93,16 @@ data Nes = Nes {
   controller :: Controller.Controller
 }
 
-data Interrupt
-  = IRQ
-  | NMI
-  deriving (Eq, Show)
-
 data CPU = CPU {
-  pc        :: IORef        Word16,
-  sp        :: IORef        Word8,
-  a         :: IORef        Word8,
-  x         :: IORef        Word8,
-  y         :: IORef        Word8,
-  p         :: IORef        Word8,
-  ram       :: VUM.IOVector Word8,
-  cycles    :: IORef        Int,
-  interrupt :: IORef        (Maybe Interrupt)
+  pc        :: IORef Word16,
+  sp        :: IORef Word8,
+  a         :: IORef Word8,
+  x         :: IORef Word8,
+  y         :: IORef Word8,
+  p         :: IORef Word8,
+  cpuCycles :: IORef Int,
+  interrupt :: IORef (Maybe Interrupt),
+  ram       :: VUM.IOVector Word8
 }
 
 data PPU = PPU {
@@ -132,52 +155,95 @@ data PPU = PPU {
   sprites               :: IORef (V.Vector Sprite)
 }
 
--- GADTs are used to represent addressing
-data Cpu a where
-  Pc :: Cpu Word16
-  Sp :: Cpu Word8
-  A :: Cpu Word8
-  X :: Cpu Word8
-  Y :: Cpu Word8
-  P :: Cpu Word8
-  Interrupt :: Cpu (Maybe Interrupt)
-  CpuMemory8 :: Word16 -> Cpu Word8
-  CpuMemory16 :: Word16 -> Cpu Word16
-  CpuCycles :: Cpu Int
+newtype Emulator a = Emulator { unNes :: ReaderT Nes IO a }
+  deriving (Monad, Applicative, Functor, MonadIO, MonadReader Nes)
 
-data Ppu a where
-  PpuCycles :: Ppu Int
-  Scanline :: Ppu Int
-  FrameCount :: Ppu Int
-  NameTableAddr :: Ppu Word16
-  CurrentVRamAddr :: Ppu Word16
-  TempVRamAddr :: Ppu Word16
-  BackgroundTableAddr :: Ppu Word16
-  SpriteTableAddr :: Ppu Word16
-  FineX :: Ppu Word8
-  VerticalBlank :: Ppu Bool
-  GenerateNMI :: Ppu Bool
-  NameTableByte :: Ppu Word8
-  AttrTableByte :: Ppu Word8
-  LoTileByte :: Ppu Word8
-  HiTileByte :: Ppu Word8
-  SpriteSize :: Ppu SpriteSize
-  BackgroundVisible :: Ppu Bool
-  SpritesVisible :: Ppu Bool
-  SpriteZeroHit :: Ppu Bool
-  TileData :: Ppu Word64
-  PaletteData :: Word16 -> Ppu Word8
-  OamData :: Word16 -> Ppu Word8
-  Sprites :: Ppu (V.Vector Sprite)
-  PpuMemory8 :: Word16 -> Ppu Word8
-  PpuMemory16 :: Word16 -> Ppu Word16
-  Screen :: Coords -> Ppu Color
-  ScreenBuffer :: Ppu (VUM.IOVector Word8)
+runEmulator :: BS.ByteString -> Emulator a ->  IO a
+runEmulator bs (Emulator reader) = do
+  cart <- Cartridge.parse bs
+  nes <- new cart
+  runReaderT reader nes
 
-data Address a where
-  Cpu :: Cpu a -> Address a
-  Ppu :: Ppu a -> Address a
-  Keys :: Address (Set Controller.Key)
+{-# INLINE with #-}
+with :: (Nes -> b) -> (b -> IO a) -> Emulator a
+with field f = do
+  nes <- ask
+  liftIO $ f (field nes)
+
+{-# INLINE load #-}
+load :: (Nes -> IORef b) -> Emulator b
+load field = with field readIORef
+
+{-# INLINE modify #-}
+modify :: (Nes -> IORef b) -> (b -> b) -> Emulator ()
+modify field v = with field (`modifyIORef'` v)
+
+loadCpu :: (CPU -> IORef b) -> Emulator b
+loadCpu field = load $ field . cpu
+
+storeCpu :: (CPU -> IORef b) -> b -> Emulator ()
+storeCpu field v = modify (field . cpu) (const v)
+
+modifyCpu :: (CPU -> IORef b) -> (b -> b) -> Emulator ()
+modifyCpu field = modify (field . cpu)
+
+loadPpu :: (PPU -> IORef b) -> Emulator b
+loadPpu field = load $ field . ppu
+
+storePpu :: (PPU -> IORef b) -> b -> Emulator ()
+storePpu field v = modify (field . ppu) (const v)
+
+modifyPpu :: (PPU -> IORef b) -> (b -> b) -> Emulator ()
+modifyPpu field = modify (field . ppu)
+
+readCpuMemory8 :: Word16 -> Emulator Word8
+readCpuMemory8 addr
+  | addr < 0x2000 = readCPURam addr
+  | addr < 0x4000 = readPPURegister addr
+  | addr == 0x4016 = readController
+  | addr >= 0x4000 && addr <= 0x4017 = pure 0
+  | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
+  | addr >= 0x6000 = readMapper addr
+  | otherwise = error "Erroneous read detected!"
+
+readCpuMemory16 :: Word16 -> Emulator Word16
+readCpuMemory16 addr = do
+  lo <- readCpuMemory8 addr
+  hi <- readCpuMemory8 (addr + 1)
+  pure $ makeW16 lo hi
+
+writeCpuMemory8 :: Word16 -> Word8 -> Emulator ()
+writeCpuMemory8 addr value
+  | addr < 0x2000 = writeCPURam addr value
+  | addr < 0x4000 = writePPURegister (0x2000 + addr `mod` 8) value
+  | addr == 0x4014 = writePPURegister addr value
+  | addr == 0x4016 = writeController value
+  | addr >= 0x4000 && addr <= 0x4017 = pure ()
+  | addr >= 0x4018 && addr <= 0x401F = pure ()
+  | addr >= 0x6000 = writeMapper addr value
+  | otherwise = error "Erroneous write detected!"
+
+writeCpuMemory16 :: Word16 -> Word16 -> Emulator ()
+writeCpuMemory16 addr value = do
+  let (lo, hi) = splitW16 value
+  writeCpuMemory8 addr lo
+  writeCpuMemory8 (addr + 1) hi
+
+readPpuMemory :: Word16 -> Emulator Word8
+readPpuMemory addr
+  | addr' < 0x2000 = readMapper addr'
+  | addr' < 0x3F00 = readNametableData addr'
+  | addr' < 0x4000 = readPalette addr'
+  | otherwise = error "Erroneous read detected!"
+  where addr' = addr `mod` 0x4000
+
+writePPUMemory :: Word16 -> Word8 -> Emulator ()
+writePPUMemory addr v
+  | addr' < 0x2000 = writeMapper addr' v
+  | addr' < 0x3F00 = writeNametableData addr' v
+  | addr' < 0x4000 = writePalette addr' v
+  | otherwise = error "Erroneous write detected!"
+  where addr' = addr `mod` 0x4000
 
 data Flag
   = Negative
@@ -198,18 +264,6 @@ new cart = do
   controller <- Controller.new
   pure $ Nes cpu ppu cart mapper controller
 
-read :: Nes -> Address a -> IO a
-read nes addr = case addr of
-  Cpu r -> readCPU nes r
-  Ppu r -> readPPU nes r
-  Keys  -> readKeys nes
-
-write :: Nes -> Address a -> a -> IO ()
-write nes addr v = case addr of
-  Cpu r -> writeCPU nes r v
-  Ppu r -> writePPU (ppu nes) r v
-  Keys  -> writeKeys nes v
-
 newCPU :: IO CPU
 newCPU = do
   pc <- newIORef 0x0
@@ -218,73 +272,209 @@ newCPU = do
   x <- newIORef 0x0
   y <- newIORef 0x0
   p <- newIORef 0x24 -- should this be 0x34?
-  ram <- VUM.replicate 65536 0x0
   cycles <- newIORef 0
   interrupt <- newIORef Nothing
+  ram <- VUM.replicate 65536 0x0
+  pure $ CPU pc sp a x y p cycles interrupt ram
 
-  pure $ CPU pc sp a x y p ram cycles interrupt
+readCPURam :: Word16 -> Emulator Word8
+readCPURam addr = with cpu $ \cpu ->
+  VUM.unsafeRead (ram cpu) (fromIntegral addr `mod` 0x0800)
 
-writeCPU :: Nes -> Cpu a -> a -> IO ()
-writeCPU nes addr v = case addr of
-  Pc            -> modifyIORef' (pc $ cpu nes) (const v)
-  Sp            -> modifyIORef' (sp $ cpu nes) (const v)
-  A             -> modifyIORef' (a $ cpu nes) (const v)
-  X             -> modifyIORef' (x $ cpu nes) (const v)
-  Y             -> modifyIORef' (y $ cpu nes) (const v)
-  P             -> modifyIORef' (p $ cpu nes) (const v)
-  Interrupt     -> modifyIORef' (interrupt $ cpu nes) (const v)
-  CpuCycles     -> modifyIORef' (cycles $ cpu nes) (const v)
-  CpuMemory8 r  -> writeCpuMemory8 nes r v
-  CpuMemory16 r -> writeCpuMemory16 nes r v
+writeCPURam :: Word16 -> Word8 -> Emulator ()
+writeCPURam addr v = with cpu $ \cpu ->
+  VUM.unsafeWrite (ram cpu) (fromIntegral addr `mod` 0x0800) v
 
-readCPU :: Nes -> Cpu a -> IO a
-readCPU nes addr = case addr of
-  Pc            -> readIORef $ pc $ cpu nes
-  Sp            -> readIORef $ sp $ cpu nes
-  A             -> readIORef $ a $ cpu nes
-  X             -> readIORef $ x $ cpu nes
-  Y             -> readIORef $ y $ cpu nes
-  P             -> readIORef $ p $ cpu nes
-  Interrupt     -> readIORef $ interrupt $ cpu nes
-  CpuCycles     -> readIORef $ cycles $ cpu nes
-  CpuMemory8 r  -> readCpuMemory8 nes r
-  CpuMemory16 r -> readCpuMemory16 nes r
+readMapper :: Word16 -> Emulator Word8
+readMapper addr = with mapper $ \mapper ->
+  Mapper.read mapper addr
 
-readCpuMemory8 :: Nes -> Word16 -> IO Word8
-readCpuMemory8 nes addr
-  | addr < 0x2000 = readCPURam nes addr
-  | addr < 0x4000 = readPPURegister nes addr
-  | addr == 0x4016 = Controller.read $ controller nes
-  | addr >= 0x4000 && addr <= 0x4017 = pure 0
-  | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
-  | addr >= 0x6000 = Mapper.read (mapper nes) addr
-  | otherwise = error "Erroneous read detected!"
+writeMapper :: Word16 -> Word8 -> Emulator ()
+writeMapper addr value = with mapper $ \mapper ->
+  Mapper.write mapper addr value
 
-readCpuMemory16 :: Nes -> Word16 -> IO Word16
-readCpuMemory16 nes addr = do
-  lo <- readCpuMemory8 nes addr
-  hi <- readCpuMemory8 nes (addr + 1)
-  pure $ makeW16 lo hi
+readController :: Emulator Word8
+readController = with controller Controller.read
 
-writeCpuMemory8 :: Nes -> Word16 -> Word8 -> IO ()
-writeCpuMemory8 nes addr v
-  | addr < 0x2000 = VUM.unsafeWrite (ram $ cpu nes) (fromIntegral addr `mod` 0x0800) v
-  | addr < 0x4000 = writePPURegister nes (0x2000 + addr `mod` 8) v
-  | addr == 0x4014 = writePPURegister nes addr v
-  | addr == 0x4016 = Controller.write (controller nes) v
-  | addr >= 0x4000 && addr <= 0x4017 = pure ()
-  | addr >= 0x4018 && addr <= 0x401F = pure ()
-  | addr >= 0x6000 = Mapper.write (mapper nes) addr v
-  | otherwise = error "Erroneous write detected!"
+writeController :: Word8 -> Emulator ()
+writeController value = with controller (`Controller.write` value)
 
-writeCpuMemory16 :: Nes -> Word16 -> Word16 -> IO ()
-writeCpuMemory16 nes addr v = do
-  let (lo, hi) = splitW16 v
-  writeCpuMemory8 nes addr lo
-  writeCpuMemory8 nes (addr + 1) hi
+storeKeys :: Set Controller.Key -> Emulator ()
+storeKeys keys = with controller (`Controller.setKeysDown` keys)
 
-readCPURam :: Nes -> Word16 -> IO Word8
-readCPURam nes addr = VUM.unsafeRead (ram $ cpu nes) (fromIntegral addr `mod` 0x0800)
+loadKeys :: Emulator (Set Controller.Key)
+loadKeys = with controller Controller.readKeysDown
+
+writeNametableData :: Word16 -> Word8 -> Emulator ()
+writeNametableData addr v = do
+  mirror <- with cart $ \cart -> readIORef $ Cartridge.mirror cart
+  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+  with ppu $ \ppu ->
+    VUM.unsafeWrite (nameTableData ppu) addr' v
+
+readNametableData :: Word16 -> Emulator Word8
+readNametableData addr = do
+  mirror <- with cart $ \cart -> readIORef $ Cartridge.mirror cart
+  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+  with ppu $ \ppu ->
+    VUM.unsafeRead (nameTableData ppu) addr'
+
+writePalette :: Word16 -> Word8 -> Emulator ()
+writePalette addr value = with ppu $ \ppu ->
+  VUM.unsafeWrite (paletteData ppu) (fromIntegral $ mirroredPaletteAddr addr) value
+
+readPalette :: Word16 -> Emulator Word8
+readPalette addr = with ppu $ \ppu ->
+  VUM.unsafeRead (paletteData ppu) (fromIntegral $ mirroredPaletteAddr addr)
+
+readPPURegister :: Word16 -> Emulator Word8
+readPPURegister addr = case 0x2000 + addr `mod` 8 of
+  0x2002 -> readStatus
+  0x2004 -> readOAMData'
+  0x2007 -> readData
+  other  -> error $ "Unimplemented read at " ++ show other
+
+writePPURegister :: Word16 -> Word8 -> Emulator ()
+writePPURegister addr v = case addr of
+  0x2000 -> writeControl v
+  0x2001 -> writeMask v
+  0x2003 -> writeOAMAddress v
+  0x2004 -> writeOAMData v
+  0x2005 -> writeScroll v
+  0x2006 -> writeAddress v
+  0x2007 -> writeData v
+  0x4014 -> writeDMA v
+
+readStatus :: Emulator Word8
+readStatus = do
+  registerV <- loadPpu ppuRegister
+  spriteOverflowV <- loadPpu spriteOverflow
+  spriteZeroHitV <- loadPpu spriteZeroHit
+  vBlankV <- loadPpu verticalBlank
+  let r = registerV .&. 0x1F
+  let r' = r .|. fromIntegral (fromEnum spriteOverflowV `shiftL` 5)
+  let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `shiftL` 6)
+  let rFinal = r'' .|. fromIntegral (fromEnum vBlankV `shiftL` 7)
+  storePpu verticalBlank False
+  storePpu writeToggle False
+  pure $ fromIntegral rFinal
+
+readOAMData' :: Emulator Word8
+readOAMData' = do
+  addr <- loadPpu oamAddress
+  with ppu $ \ppu ->
+    VUM.unsafeRead (oamData ppu) (fromIntegral addr `mod` 0x0800)
+
+readOAMData :: Word16 -> Emulator Word8
+readOAMData addr = with ppu $ \ppu ->
+  VUM.unsafeRead (oamData ppu) (fromIntegral addr)
+
+readData :: Emulator Word8
+readData = do
+  addr <- loadPpu currentVramAddress
+
+  rv <- if (addr `mod` 0x4000) < 0x3F00 then do
+    v <- readPpuMemory addr
+    buffered <- loadPpu dataV
+    storePpu dataV v
+    pure buffered
+  else do
+    v <- readPpuMemory (addr - 0x1000)
+    storePpu dataV v
+    readPpuMemory addr
+
+  incMode <- loadPpu incrementMode
+  let inc = case incMode of
+        Horizontal -> 1
+        Vertical   -> 32
+  modifyPpu currentVramAddress (+ inc)
+  pure rv
+
+writeData :: Word8 -> Emulator ()
+writeData v = do
+  addr <- loadPpu currentVramAddress
+  writePPUMemory addr v
+  incMode <- loadPpu incrementMode
+  let inc = case incMode of
+        Horizontal -> 1
+        Vertical   -> 32
+  modifyPpu currentVramAddress (+ inc)
+
+writeDMA :: Word8 -> Emulator ()
+writeDMA v = do
+  let startingAddr = toWord16 v `shiftL` 8
+  let addresses = fmap (+ startingAddr) [0..255]
+  forM_ addresses (\addr -> do
+    oamA <- loadPpu oamAddress
+    oamV <- readCpuMemory8 addr
+    with ppu $ \ppu ->
+      VUM.unsafeWrite (oamData ppu) (toInt oamA) oamV
+    modifyPpu oamAddress (+ 1))
+
+writeControl :: Word8 -> Emulator ()
+writeControl v = do
+  storePpu nameTable $ case (v `shiftR` 0) .&. 3 of
+    0 -> 0x2000
+    1 -> 0x2400
+    2 -> 0x2800
+    3 -> 0x2C00
+  storePpu incrementMode $ if testBit v 2 then Vertical else Horizontal
+  storePpu spriteTable $ if testBit v 3 then 0x1000 else 0x0000
+  storePpu bgTable $ if testBit v 4 then 0x1000 else 0x0000
+  storePpu spriteSize $ if testBit v 5 then Double else Normal
+  storePpu nmiEnabled $ testBit v 7
+  tv <- loadPpu tempVramAddress
+  storePpu tempVramAddress ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `shiftL` 10)
+
+writeMask :: Word8 -> Emulator ()
+writeMask v = do
+  storePpu colorMode $ if testBit v 0 then Grayscale else Color
+  storePpu leftBgVisibility $ if testBit v 1 then Shown else Hidden
+  storePpu leftSpritesVisibility $ if testBit v 2 then Shown else Hidden
+  storePpu bgVisibility $ testBit v 3
+  storePpu spriteVisibility $ testBit v 4
+  storePpu intensifyReds $ testBit v 5
+  storePpu intensifyGreens $ testBit v 6
+  storePpu intensifyBlues $ testBit v 7
+
+writeOAMAddress :: Word8 -> Emulator ()
+writeOAMAddress = storePpu oamAddress
+
+writeOAMData :: Word8 -> Emulator ()
+writeOAMData v = do
+  addr <- loadPpu oamAddress
+  with ppu $ \ppu ->
+    VUM.unsafeWrite (oamData ppu) (toInt addr) v
+  modifyPpu oamAddress (+ 1)
+
+writeScroll :: Word8 -> Emulator ()
+writeScroll v = do
+  wv <- loadPpu writeToggle
+  tv <- loadPpu tempVramAddress
+  if wv then do
+    let tv' = (tv .&. 0x8FFF) .|. ((toWord16 v .&. 0x07) `shiftL` 12)
+    let tv'' = (tv' .&. 0xFC1F) .|. ((toWord16 v .&. 0xF8) `shiftL` 2)
+    storePpu tempVramAddress tv''
+    storePpu writeToggle False
+  else do
+    let tv' = (tv .&. 0xFFE0) .|. (toWord16 v `shiftR` 3)
+    storePpu tempVramAddress tv'
+    storePpu fineX $ v .&. 0x07
+    storePpu writeToggle True
+
+writeAddress :: Word8 -> Emulator ()
+writeAddress v = do
+  wv <- loadPpu writeToggle
+  tv <- loadPpu tempVramAddress
+  if wv then do
+    let tv' = (tv .&. 0xFF00) .|. toWord16 v
+    storePpu tempVramAddress tv'
+    storePpu currentVramAddress tv'
+    storePpu writeToggle False
+  else do
+    let tv' = (tv .&. 0x80FF) .|. ((toWord16 v .&. 0x3F) `shiftL` 8)
+    storePpu tempVramAddress tv'
+    storePpu writeToggle True
 
 newPPU :: IO PPU
 newPPU = do
@@ -357,230 +547,10 @@ newPPU = do
     -- Temp vars
     nameTableByte attrTableByte loTileByte hiTileByte tileData sprites
 
-
-readPPU :: Nes -> Ppu a -> IO a
-readPPU nes addr = case addr of
-  PpuCycles           -> readIORef $ ppuCycles $ ppu nes
-  NameTableAddr       -> readIORef $ nameTable $ ppu nes
-  CurrentVRamAddr     -> readIORef $ currentVramAddress $ ppu nes
-  TempVRamAddr        -> readIORef $ tempVramAddress $ ppu nes
-  Scanline            -> readIORef $ scanline $ ppu nes
-  FrameCount          -> readIORef $ frameCount $ ppu nes
-  FineX               -> readIORef $ fineX $ ppu nes
-  VerticalBlank       -> readIORef $ verticalBlank $ ppu nes
-  GenerateNMI         -> readIORef $ nmiEnabled $ ppu nes
-  BackgroundTableAddr -> readIORef $ bgTable $ ppu nes
-  SpriteTableAddr     -> readIORef $ spriteTable $ ppu nes
-  NameTableByte       -> readIORef $ nameTableByte $ ppu nes
-  BackgroundVisible   -> readIORef $ bgVisibility $ ppu nes
-  SpritesVisible      -> readIORef $ spriteVisibility $ ppu nes
-  SpriteZeroHit       -> readIORef $ spriteZeroHit $ ppu nes
-  AttrTableByte       -> readIORef $ attrTableByte $ ppu nes
-  LoTileByte          -> readIORef $ loTileByte $ ppu nes
-  HiTileByte          -> readIORef $ hiTileByte $ ppu nes
-  TileData            -> readIORef $ tileData $ ppu nes
-  Sprites             -> readIORef $ sprites $ ppu nes
-  SpriteSize          -> readIORef $ spriteSize $ ppu nes
-  OamData addr        -> readOAMData' (ppu nes) addr
-  PaletteData i       -> VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral i)
-  ScreenBuffer        -> pure $ screen $ ppu nes
-  PpuMemory8 r        -> readPPUMemory nes r
-
-writePPU :: PPU -> Ppu a -> a -> IO ()
-writePPU ppu addr v = case addr of
-  PpuCycles       -> modifyIORef' (ppuCycles ppu) (const v)
-  Scanline        -> modifyIORef' (scanline ppu) (const v)
-  FrameCount      -> modifyIORef' (frameCount ppu) (const v)
-  CurrentVRamAddr -> modifyIORef' (currentVramAddress ppu) (const v)
-  TempVRamAddr    -> modifyIORef' (tempVramAddress ppu) (const v)
-  VerticalBlank   -> modifyIORef' (verticalBlank ppu) (const v)
-  SpriteZeroHit   -> modifyIORef' (spriteZeroHit ppu) (const v)
-  NameTableByte   -> modifyIORef' (nameTableByte ppu) (const v)
-  AttrTableByte   -> modifyIORef' (attrTableByte ppu) (const v)
-  LoTileByte      -> modifyIORef' (loTileByte ppu) (const v)
-  HiTileByte      -> modifyIORef' (hiTileByte ppu) (const v)
-  TileData        -> modifyIORef' (tileData ppu) (const v)
-  Sprites         -> modifyIORef' (sprites ppu) (const v)
-  Screen coords   -> writeScreen ppu coords v
-
-readPPUMemory :: Nes -> Word16 -> IO Word8
-readPPUMemory nes addr
-  | addr' < 0x2000 = Mapper.read (mapper nes) addr'
-  | addr' < 0x3F00 = readNametableData nes addr'
-  | addr' < 0x4000 = readPalette nes addr'
-  | otherwise = error "Erroneous read detected!"
-  where addr' = addr `mod` 0x4000
-
-writePPUMemory :: Nes -> Word16 -> Word8 -> IO ()
-writePPUMemory nes addr v
-  | addr' < 0x2000 = Mapper.write (mapper nes) addr' v
-  | addr' < 0x3F00 = writeNametableData nes addr' v
-  | addr' < 0x4000 = writePalette nes addr' v
-  | otherwise = error "Erroneous write detected!"
-  where addr' = addr `mod` 0x4000
-
-readPPURegister :: Nes -> Word16 -> IO Word8
-readPPURegister nes addr = case 0x2000 + addr `mod` 8 of
-  0x2002 -> readStatus (ppu nes)
-  0x2004 -> readOAMData (ppu nes)
-  0x2007 -> readData nes
-  other  -> error $ "Unimplemented read at " ++ show other
-
-readStatus :: PPU -> IO Word8
-readStatus ppu = do
-  registerV <- readIORef $ ppuRegister ppu
-  spriteOverflowV <- readIORef $ spriteOverflow ppu
-  spriteZeroHitV <- readIORef $ spriteZeroHit ppu
-  vBlankV <- readIORef $ verticalBlank ppu
-  let r = registerV .&. 0x1F
-  let r' = r .|. fromIntegral (fromEnum spriteOverflowV `shiftL` 5)
-  let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `shiftL` 6)
-  let rFinal = r'' .|. fromIntegral (fromEnum vBlankV `shiftL` 7)
-  modifyIORef' (verticalBlank ppu) (const False)
-  modifyIORef' (writeToggle ppu) (const False)
-  pure $ fromIntegral rFinal
-
-readOAMData :: PPU -> IO Word8
-readOAMData ppu = do
-  addr <- readIORef $ oamAddress ppu
-  VUM.unsafeRead (oamData ppu) (fromIntegral $ addr)
-
-readOAMData' :: PPU -> Word16 -> IO Word8
-readOAMData' ppu addr = VUM.unsafeRead (oamData ppu) (fromIntegral $ addr)
-
-readData :: Nes -> IO Word8
-readData nes = do
-  addr <- readIORef $ currentVramAddress (ppu nes)
-
-  rv <- if (addr `mod` 0x4000) < 0x3F00 then do
-    v <- readPPUMemory nes addr
-    buffered <- readIORef (dataV $ ppu nes)
-    modifyIORef' (dataV $ ppu nes) (const v)
-    pure buffered
-  else do
-    v' <- readPPUMemory nes (addr - 0x1000)
-    modifyIORef' (dataV $ ppu nes) (const v')
-    readPPUMemory nes addr
-
-  incMode <- readIORef $ incrementMode (ppu nes)
-  let inc = case incMode of
-        Horizontal -> 1
-        Vertical   -> 32
-  modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
-  pure rv
-
-writePPURegister :: Nes -> Word16 -> Word8 -> IO ()
-writePPURegister nes addr v = case addr of
-  0x2000 -> writeControl (ppu nes) v
-  0x2001 -> writeMask (ppu nes) v
-  0x2003 -> writeOAMAddress (ppu nes) v
-  0x2004 -> writeOAMData (ppu nes) v
-  0x2005 -> writeScroll (ppu nes) v
-  0x2006 -> writeAddress (ppu nes) v
-  0x2007 -> writeData nes v
-  0x4014 -> writeDMA nes v
-
-writeControl :: PPU -> Word8 -> IO ()
-writeControl ppu v = do
-  modifyIORef' (nameTable ppu) $ const $ case (v `shiftR` 0) .&. 3 of
-    0 -> 0x2000
-    1 -> 0x2400
-    2 -> 0x2800
-    3 -> 0x2C00
-  modifyIORef' (incrementMode ppu) $ const $ if testBit v 2 then Vertical else Horizontal
-  modifyIORef' (spriteTable ppu) $ const $ if testBit v 3 then 0x1000 else 0x0000
-  modifyIORef' (bgTable ppu) $ const $ if testBit v 4 then 0x1000 else 0x0000
-  modifyIORef' (spriteSize ppu) $ const $ if testBit v 5 then Double else Normal
-  modifyIORef' (nmiEnabled ppu) $ const $ testBit v 7
-  tv <- readIORef (tempVramAddress ppu)
-  modifyIORef' (tempVramAddress ppu) $ const ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `shiftL` 10)
-
-writeMask :: PPU -> Word8 -> IO ()
-writeMask ppu v = do
-  modifyIORef' (colorMode ppu) $ const $ if testBit v 0 then Grayscale else Color
-  modifyIORef' (leftBgVisibility ppu) $ const $ if testBit v 1 then Shown else Hidden
-  modifyIORef' (leftSpritesVisibility ppu) $ const $ if testBit v 2 then Shown else Hidden
-  modifyIORef' (bgVisibility ppu) $ const $ testBit v 3
-  modifyIORef' (spriteVisibility ppu) $ const $ testBit v 4
-  modifyIORef' (intensifyReds ppu) $ const $ testBit v 5
-  modifyIORef' (intensifyGreens ppu) $ const $ testBit v 6
-  modifyIORef' (intensifyBlues ppu) $ const $ testBit v 7
-
-writeOAMAddress :: PPU -> Word8 -> IO ()
-writeOAMAddress ppu v = modifyIORef' (oamAddress ppu) (const v)
-
-writeOAMData :: PPU -> Word8 -> IO ()
-writeOAMData ppu v = do
-  addr <- readIORef $ oamAddress ppu
-  VUM.unsafeWrite (oamData ppu) (toInt addr) v
-  modifyIORef' (oamAddress ppu) (+ 1)
-
-writeScroll :: PPU -> Word8 -> IO ()
-writeScroll ppu v = do
-  wv <- readIORef (writeToggle ppu)
-  tv <- readIORef (tempVramAddress ppu)
-  if wv then do
-    let tv' = (tv .&. 0x8FFF) .|. ((toWord16 v .&. 0x07) `shiftL` 12)
-    let tv'' = (tv' .&. 0xFC1F) .|. ((toWord16 v .&. 0xF8) `shiftL` 2)
-    modifyIORef' (tempVramAddress ppu) (const tv'')
-    modifyIORef' (writeToggle ppu) (const False)
-  else do
-    let tv' = (tv .&. 0xFFE0) .|. (toWord16 v `shiftR` 3)
-    modifyIORef' (tempVramAddress ppu) (const tv')
-    modifyIORef' (fineX ppu) (const $ v .&. 0x07)
-    modifyIORef' (writeToggle ppu) (const True)
-
-writeAddress :: PPU -> Word8 -> IO ()
-writeAddress ppu v = do
-  wv <- readIORef $ writeToggle ppu
-  tv <- readIORef $ tempVramAddress ppu
-  if wv then do
-    let tv' = (tv .&. 0xFF00) .|. (toWord16 v)
-    modifyIORef' (tempVramAddress ppu) (const tv')
-    modifyIORef' (currentVramAddress ppu) (const tv')
-    modifyIORef' (writeToggle ppu) (const False)
-  else do
-    let tv' = (tv .&. 0x80FF) .|. (((toWord16 v) .&. 0x3F) `shiftL` 8)
-    modifyIORef' (tempVramAddress ppu) (const tv')
-    modifyIORef' (writeToggle ppu) (const True)
-
-writeDMA :: Nes -> Word8 -> IO ()
-writeDMA nes v = do
-  let startingAddr = (toWord16 v) `shiftL` 8
-  let addresses = fmap (+ startingAddr) [0..255]
-  forM_ addresses (\addr -> do
-    oamA <- readIORef $ oamAddress (ppu nes)
-    oamV <- readCpuMemory8 nes addr
-    VUM.unsafeWrite (oamData $ ppu nes) (toInt oamA) oamV
-    modifyIORef' (oamAddress (ppu nes)) (+ 1))
-
-writeData :: Nes -> Word8 -> IO ()
-writeData nes v = do
-  addr <- readIORef $ currentVramAddress (ppu nes)
-  writePPUMemory nes addr v
-  incMode <- readIORef $ incrementMode (ppu nes)
-  let inc = case incMode of
-        Horizontal -> 1
-        Vertical   -> 32
-  modifyIORef' (currentVramAddress (ppu nes)) (+ inc)
-
-writeNametableData :: Nes -> Word16 -> Word8 -> IO ()
-writeNametableData nes addr v = do
-  mirror <- readIORef $ Cartridge.mirror $ cart nes
-  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
-  VUM.unsafeWrite (nameTableData $ ppu nes) addr' v
-
-readNametableData :: Nes -> Word16 -> IO Word8
-readNametableData nes addr = do
-  mirror <- readIORef $ Cartridge.mirror $ cart nes
-  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
-  VUM.unsafeRead (nameTableData $ ppu nes) addr'
-
-writePalette :: Nes -> Word16 -> Word8 -> IO ()
-writePalette nes addr = VUM.unsafeWrite (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
-
-readPalette :: Nes -> Word16 -> IO Word8
-readPalette nes addr = VUM.unsafeRead (paletteData $ ppu nes) (fromIntegral $ mirroredPaletteAddr addr)
+-- readPalette :: Word16 -> Emulator Word8
+-- readPalette addr = with ppu $ \ppu ->
+--   VUM.unsafeRead (paletteData ppu) addr
+--   where addr = fromIntegral $ if (addr >= 16) && (addr `mod` 4 == 0) then addr - 16 else addr
 
 mirroredPaletteAddr :: Word16 -> Word16
 mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
@@ -602,14 +572,12 @@ nameTableMirrorLookup = V.fromList (fmap V.fromList [
     [0, 1, 2, 3]
   ])
 
-writeKeys :: Nes -> Set Controller.Key -> IO ()
-writeKeys = Controller.setKeysDown . controller
+loadScreen :: Emulator (VUM.IOVector Word8)
+loadScreen = with ppu $ \ppu ->
+  pure $ screen ppu
 
-readKeys :: Nes -> IO (Set Controller.Key)
-readKeys = Controller.readKeysDown . controller
-
-writeScreen :: PPU -> Coords -> Color -> IO ()
-writeScreen ppu coords color = do
+writeScreen :: Coords -> Color -> Emulator ()
+writeScreen coords color = with ppu $ \ppu -> do
   let (r, g, b) = color
   let offset = fromIntegral $ translateXY coords 256 * 3
   VUM.write (screen ppu) (offset + 0) r

@@ -7,22 +7,21 @@ module Emulator (
 import           Control.Monad
 import           Control.Monad.Loops
 import qualified Emulator.CPU        as CPU
-import           Emulator.Monad
 import           Emulator.Nes
 import qualified Emulator.PPU        as PPU
 
-step :: IOEmulator ()
+step :: Emulator ()
 step = do
   cycles' <- CPU.step
   replicateM_ (cycles' * 3) PPU.step
 
-stepFrame :: IOEmulator ()
+stepFrame :: Emulator ()
 stepFrame = do
-  frameCount <- load $ Ppu FrameCount
+  count <- loadPpu frameCount
   untilM_ step $ do
-    frameCount' <- load $ Ppu FrameCount
-    pure $ frameCount' == (frameCount + 1)
+    count' <- loadPpu frameCount
+    pure $ count' == (count + 1)
 
-reset :: IOEmulator ()
+reset :: Emulator ()
 reset = CPU.reset >> PPU.reset
 

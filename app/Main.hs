@@ -7,9 +7,8 @@ import qualified Data.ByteString     as BS
 import           Data.Maybe          (catMaybes)
 import           Data.Set            as Set hiding (foldl)
 import qualified Data.Text           as T
-import           Emulator            (reset, stepFrame)
+import           Emulator            (reset, step, stepFrame)
 import           Emulator.Controller as Controller
-import           Emulator.Monad
 import           Emulator.Nes
 import           SDL
 import           SDL.Time
@@ -28,21 +27,22 @@ main = do
   window <- SDL.createWindow "hnes" windowConfig
   -- Create Renderer
   let rendererConfig = RendererConfig {
-    rendererType          = AcceleratedVSyncRenderer,
+    rendererType          = AcceleratedRenderer,
     rendererTargetTexture = True
   }
   renderer <- SDL.createRenderer window (-1) rendererConfig
   -- Create NES
-  runIOEmulator cart' $ do
+  runEmulator cart' $ do
     reset
     appLoop 0 0 renderer window
 
-appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator ()
+appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> Emulator ()
 appLoop lastTime frames renderer window = do
   intents <- eventsToIntents <$> SDL.pollEvents
-  oldKeys <- load Keys
-  store Keys (intentsToKeys oldKeys intents)
+  oldKeys <- loadKeys
+  storeKeys (intentsToKeys oldKeys intents)
   stepFrame
+  step
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer
@@ -57,10 +57,9 @@ appLoop lastTime frames renderer window = do
   else
     unless (elem Exit intents) (appLoop lastTime (frames + 1) renderer window)
 
-
-render :: SDL.Renderer -> IOEmulator SDL.Texture
+render :: SDL.Renderer -> Emulator SDL.Texture
 render renderer = do
-  mv <- load $ Ppu ScreenBuffer
+  mv <- loadScreen
   surface <- createRGBSurfaceFrom mv (V2 256 240) (256 * fromIntegral scale) SDL.RGB24
   texture <- createTextureFromSurface renderer surface
   SDL.freeSurface surface
