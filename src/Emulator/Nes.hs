@@ -178,21 +178,27 @@ load field = with field readIORef
 modify :: (Nes -> IORef b) -> (b -> b) -> Emulator ()
 modify field v = with field (`modifyIORef'` v)
 
+{-# INLINE loadCpu #-}
 loadCpu :: (CPU -> IORef b) -> Emulator b
 loadCpu field = load $ field . cpu
 
+{-# INLINE storeCpu #-}
 storeCpu :: (CPU -> IORef b) -> b -> Emulator ()
 storeCpu field v = modify (field . cpu) (const v)
 
+{-# INLINE modifyCpu #-}
 modifyCpu :: (CPU -> IORef b) -> (b -> b) -> Emulator ()
 modifyCpu field = modify (field . cpu)
 
+{-# INLINE loadPpu #-}
 loadPpu :: (PPU -> IORef b) -> Emulator b
 loadPpu field = load $ field . ppu
 
+{-# INLINE storePpu #-}
 storePpu :: (PPU -> IORef b) -> b -> Emulator ()
 storePpu field v = modify (field . ppu) (const v)
 
+{-# INLINE modifyPpu #-}
 modifyPpu :: (PPU -> IORef b) -> (b -> b) -> Emulator ()
 modifyPpu field = modify (field . ppu)
 

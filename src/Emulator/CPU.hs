@@ -21,6 +21,7 @@ reset = do
   storeCpu sp 0xFD
   storeCpu p 0x24
 
+{-# INLINE step #-}
 step :: Emulator Int
 step = do
   -- Start counting the number of cycles.

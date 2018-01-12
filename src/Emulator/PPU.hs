@@ -21,6 +21,7 @@ reset = do
   storePpu scanline 240
   storePpu verticalBlank False
 
+{-# INLINE step #-}
 step :: Emulator ()
 step = do
   (scanline, cycle) <- tick
@@ -91,6 +92,7 @@ handleLinePhase scanline cycle = do
     exitVBlank
     storePpu spriteZeroHit False
 
+{-# INLINE renderPixel #-}
 renderPixel :: Int -> Int -> Emulator ()
 renderPixel scanline cycle = do
   let coords = (cycle - 1, scanline)
