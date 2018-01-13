@@ -11,7 +11,7 @@ import           Data.IORef
 import qualified Data.Vector.Unboxed         as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 import           Data.Word
-import           Emulator.Util               (prettifyWord16, sliceBS, toInt)
+import           Emulator.Util               (sliceBS)
 import           Prelude                     hiding (read)
 
 data INesFileHeader = INesFileHeader {

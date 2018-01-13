@@ -4,16 +4,12 @@ module Emulator.PPU (
 ) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class
-import           Data.Bits              (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
-import           Data.Char              (toLower)
-import           Data.IORef
-import           Data.Maybe             (fromMaybe)
-import qualified Data.Vector            as V
+import           Data.Bits     (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
+import qualified Data.Vector   as V
 import           Data.Word
 import           Emulator.Nes
 import           Emulator.Util
-import           Prelude                hiding (cycle)
+import           Prelude       hiding (cycle)
 
 reset :: Emulator ()
 reset = do

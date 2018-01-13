@@ -7,7 +7,7 @@ import qualified Data.ByteString     as BS
 import           Data.Maybe          (catMaybes)
 import           Data.Set            as Set hiding (foldl)
 import qualified Data.Text           as T
-import           Emulator            (reset, step, stepFrame)
+import           Emulator            (reset, stepFrame)
 import           Emulator.Controller as Controller
 import           Emulator.Nes
 import           SDL
@@ -42,7 +42,6 @@ appLoop lastTime frames renderer window = do
   oldKeys <- loadKeys
   storeKeys (intentsToKeys oldKeys intents)
   stepFrame
-  -- step
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer

@@ -38,15 +38,13 @@ module Emulator.Nes (
 ) where
 
 import           Control.Monad
-import           Control.Monad.ST
-import           Data.Bits                    (setBit, testBit, unsafeShiftL,
-                                               unsafeShiftR, (.&.), (.|.))
+import           Data.Bits                    (testBit, unsafeShiftL, unsafeShiftR, (.&.),
+                                               (.|.))
 import qualified Data.ByteString              as BS
 import           Data.IORef
 import           Data.Set                     as Set
 import qualified Data.Vector                  as V
 import qualified Data.Vector.Storable.Mutable as VUM
-import qualified Data.Vector.Unboxed          as VU
 import           Data.Word
 import           Emulator.Cartridge           as Cartridge
 import qualified Emulator.Controller          as Controller
@@ -57,7 +55,7 @@ import           Prelude                      hiding (read, replicate)
 
 import           Control.Monad.IO.Class       (liftIO)
 import           Control.Monad.Reader         (MonadReader, ReaderT, ask, runReaderT)
-import           Control.Monad.Trans          (MonadIO, lift)
+import           Control.Monad.Trans          (MonadIO)
 
 data Sprite = Sprite {
   sIndex         :: Int,
