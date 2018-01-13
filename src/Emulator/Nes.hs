@@ -164,37 +164,29 @@ with field f = do
   nes <- ask
   liftIO $ f (field nes)
 
-{-# INLINE load #-}
-load :: (Nes -> IORef b) -> Emulator b
-load field = with field readIORef
-
-{-# INLINE modify #-}
-modify :: (Nes -> IORef b) -> (b -> b) -> Emulator ()
-modify field v = with field (`modifyIORef'` v)
-
 {-# INLINE loadCpu #-}
 loadCpu :: (CPU -> IORef b) -> Emulator b
-loadCpu field = load $ field . cpu
+loadCpu field = with (field . cpu) readIORef
 
 {-# INLINE storeCpu #-}
 storeCpu :: (CPU -> IORef b) -> b -> Emulator ()
-storeCpu field v = modify (field . cpu) (const v)
+storeCpu field v = with (field . cpu) (`modifyIORef'` const v)
 
 {-# INLINE modifyCpu #-}
 modifyCpu :: (CPU -> IORef b) -> (b -> b) -> Emulator ()
-modifyCpu field = modify (field . cpu)
+modifyCpu field v = with (field . cpu) (`modifyIORef'` v)
 
 {-# INLINE loadPpu #-}
 loadPpu :: (PPU -> IORef b) -> Emulator b
-loadPpu field = load $ field . ppu
+loadPpu field = with (field . ppu) readIORef
 
 {-# INLINE storePpu #-}
 storePpu :: (PPU -> IORef b) -> b -> Emulator ()
-storePpu field v = modify (field . ppu) (const v)
+storePpu field v = with (field . ppu) (`modifyIORef'` const v)
 
 {-# INLINE modifyPpu #-}
 modifyPpu :: (PPU -> IORef b) -> (b -> b) -> Emulator ()
-modifyPpu field = modify (field . ppu)
+modifyPpu field v = with (field . ppu) (`modifyIORef'` v)
 
 readCpuMemory8 :: Word16 -> Emulator Word8
 readCpuMemory8 addr

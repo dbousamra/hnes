@@ -20,7 +20,6 @@ reset = do
   storeCpu sp 0xFD
   storeCpu p 0x24
 
-
 step :: Emulator Int
 step = do
   -- Start counting the number of cycles.
@@ -109,10 +108,8 @@ addressPageCrossForMode mode = case mode of
     pcv <- loadCpu pc
     offset16 <- readCpuMemory16 (pcv + 1)
     let offset8 = firstNibble offset16
-    if offset8 < 0x80 then
-      pure (False, pcv + 2 + offset8)
-    else
-      pure (False, pcv + 2 + offset8 - 0x100)
+    let diff = if offset8 < 0x80 then 0 else 0x100
+    pure (False, pcv + 2 + offset8 - diff)
   ZeroPage -> do
     pcv <- loadCpu pc
     v <- readCpuMemory8 (pcv + 1)
