@@ -13,8 +13,6 @@ module Emulator.Nes (
   , Flag(..)
   , IncrementMode(..)
   , SpriteSize(..)
-  , ColorMode(..)
-  , Visibility(..)
   , Interrupt(..)
   , new
   , runEmulator
@@ -38,6 +36,9 @@ module Emulator.Nes (
 ) where
 
 import           Control.Monad
+import           Control.Monad.IO.Class       (liftIO)
+import           Control.Monad.Reader         (MonadReader, ReaderT, ask, runReaderT)
+import           Control.Monad.Trans          (MonadIO)
 import           Data.Bits                    (testBit, unsafeShiftL, unsafeShiftR, (.&.),
                                                (.|.))
 import qualified Data.ByteString              as BS
@@ -51,11 +52,6 @@ import qualified Emulator.Controller          as Controller
 import qualified Emulator.Mapper              as Mapper
 import           Emulator.Util
 import           Prelude                      hiding (read, replicate)
-
-
-import           Control.Monad.IO.Class       (liftIO)
-import           Control.Monad.Reader         (MonadReader, ReaderT, ask, runReaderT)
-import           Control.Monad.Trans          (MonadIO)
 
 data Sprite = Sprite {
   sIndex         :: Int,
@@ -579,4 +575,3 @@ writeScreen (x, y) (r, g, b) = with ppu $ \ppu -> do
   VUM.write (screen ppu) (offset + 0) r
   VUM.write (screen ppu) (offset + 1) g
   VUM.write (screen ppu) (offset + 2) b
-
