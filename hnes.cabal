@@ -49,8 +49,8 @@ executable hnes
   default-extensions: Strict
   ghc-options:        -threaded
                       -O2
-                      -fllvm 
-                      -fforce-recomp
+                      -- -fllvm 
+                      -- -fforce-recomp
                       -funbox-strict-fields
   build-depends:       base >= 4.7 && < 5
                      , hnes
