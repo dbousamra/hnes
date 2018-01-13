@@ -21,6 +21,7 @@ new cart = case mapperType cart of
   2     -> mapper2 cart
   3     -> mapper3 cart
   7     -> mapper7 cart
+  66    -> mapper2 cart
   other -> error $ "Unsupported mapper type " ++ show other
 
 mapper2 :: Cartridge -> IO Mapper

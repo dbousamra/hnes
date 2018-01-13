@@ -4,7 +4,6 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString        as BS
 import           Emulator
-import           Emulator.Monad
 import           Emulator.Nes
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -47,8 +46,8 @@ cpuTest = testGroup "cpu" [
 run :: FilePath -> IO ()
 run rom = do
   rom <- BS.readFile rom
-  runIOEmulator rom $ do
+  runEmulator rom $ do
     reset
     replicateM_ 300 stepFrame
-    result <- load (Cpu $ CpuMemory8 0x6000)
+    result <- readCpuMemory8 0x6000
     liftIO $ assertEqual "Return code at 0x6000" 0 result

@@ -39,8 +39,8 @@ module Emulator.Nes (
 
 import           Control.Monad
 import           Control.Monad.ST
-import           Data.Bits                    (setBit, shiftL, shiftR, testBit, (.&.),
-                                               (.|.))
+import           Data.Bits                    (setBit, testBit, unsafeShiftL,
+                                               unsafeShiftR, (.&.), (.|.))
 import qualified Data.ByteString              as BS
 import           Data.IORef
 import           Data.Set                     as Set
@@ -221,7 +221,7 @@ readCpuMemory16 addr = do
 writeCpuMemory8 :: Word16 -> Word8 -> Emulator ()
 writeCpuMemory8 addr value
   | addr < 0x2000 = writeCPURam addr value
-  | addr < 0x4000 = writePPURegister (0x2000 + addr `mod` 8) value
+  | addr < 0x4000 = writePPURegister (0x2000 + addr `rem` 8) value
   | addr == 0x4014 = writePPURegister addr value
   | addr == 0x4016 = writeController value
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
@@ -241,7 +241,7 @@ readPpuMemory addr
   | addr' < 0x3F00 = readNametableData addr'
   | addr' < 0x4000 = readPalette addr'
   | otherwise = error "Erroneous read detected!"
-  where addr' = addr `mod` 0x4000
+  where addr' = addr `rem` 0x4000
 
 writePPUMemory :: Word16 -> Word8 -> Emulator ()
 writePPUMemory addr v
@@ -249,7 +249,7 @@ writePPUMemory addr v
   | addr' < 0x3F00 = writeNametableData addr' v
   | addr' < 0x4000 = writePalette addr' v
   | otherwise = error "Erroneous write detected!"
-  where addr' = addr `mod` 0x4000
+  where addr' = addr `rem` 0x4000
 
 data Flag
   = Negative
@@ -285,11 +285,11 @@ newCPU = do
 
 readCPURam :: Word16 -> Emulator Word8
 readCPURam addr = with cpu $ \cpu ->
-  VUM.unsafeRead (ram cpu) (fromIntegral addr `mod` 0x0800)
+  VUM.unsafeRead (ram cpu) (fromIntegral addr `rem` 0x0800)
 
 writeCPURam :: Word16 -> Word8 -> Emulator ()
 writeCPURam addr v = with cpu $ \cpu ->
-  VUM.unsafeWrite (ram cpu) (fromIntegral addr `mod` 0x0800) v
+  VUM.unsafeWrite (ram cpu) (fromIntegral addr `rem` 0x0800) v
 
 readMapper :: Word16 -> Emulator Word8
 readMapper addr = with mapper $ \mapper ->
@@ -314,14 +314,14 @@ loadKeys = with controller Controller.readKeysDown
 writeNametableData :: Word16 -> Word8 -> Emulator ()
 writeNametableData addr v = do
   mirror <- with cart $ \cart -> readIORef $ Cartridge.mirror cart
-  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `rem` 0x800
   with ppu $ \ppu ->
     VUM.unsafeWrite (nameTableData ppu) addr' v
 
 readNametableData :: Word16 -> Emulator Word8
 readNametableData addr = do
   mirror <- with cart $ \cart -> readIORef $ Cartridge.mirror cart
-  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `mod` 0x800
+  let addr' = fromIntegral (mirroredNametableAddr addr mirror) `rem` 0x800
   with ppu $ \ppu ->
     VUM.unsafeRead (nameTableData ppu) addr'
 
@@ -334,7 +334,7 @@ readPalette addr = with ppu $ \ppu ->
   VUM.unsafeRead (paletteData ppu) (fromIntegral $ mirroredPaletteAddr addr)
 
 readPPURegister :: Word16 -> Emulator Word8
-readPPURegister addr = case 0x2000 + addr `mod` 8 of
+readPPURegister addr = case 0x2000 + addr `rem` 8 of
   0x2002 -> readStatus
   0x2004 -> readOAMData'
   0x2007 -> readData
@@ -358,9 +358,9 @@ readStatus = do
   spriteZeroHitV <- loadPpu spriteZeroHit
   vBlankV <- loadPpu verticalBlank
   let r = registerV .&. 0x1F
-  let r' = r .|. fromIntegral (fromEnum spriteOverflowV `shiftL` 5)
-  let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `shiftL` 6)
-  let rFinal = r'' .|. fromIntegral (fromEnum vBlankV `shiftL` 7)
+  let r' = r .|. fromIntegral (fromEnum spriteOverflowV `unsafeShiftL` 5)
+  let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `unsafeShiftL` 6)
+  let rFinal = r'' .|. fromIntegral (fromEnum vBlankV `unsafeShiftL` 7)
   storePpu verticalBlank False
   storePpu writeToggle False
   pure $ fromIntegral rFinal
@@ -369,7 +369,7 @@ readOAMData' :: Emulator Word8
 readOAMData' = do
   addr <- loadPpu oamAddress
   with ppu $ \ppu ->
-    VUM.unsafeRead (oamData ppu) (fromIntegral addr `mod` 0x0800)
+    VUM.unsafeRead (oamData ppu) (fromIntegral addr `rem` 0x0800)
 
 readOAMData :: Word16 -> Emulator Word8
 readOAMData addr = with ppu $ \ppu ->
@@ -379,7 +379,7 @@ readData :: Emulator Word8
 readData = do
   addr <- loadPpu currentVramAddress
 
-  rv <- if (addr `mod` 0x4000) < 0x3F00 then do
+  rv <- if (addr `rem` 0x4000) < 0x3F00 then do
     v <- readPpuMemory addr
     buffered <- loadPpu dataV
     storePpu dataV v
@@ -408,7 +408,7 @@ writeData v = do
 
 writeDMA :: Word8 -> Emulator ()
 writeDMA v = do
-  let startingAddr = toWord16 v `shiftL` 8
+  let startingAddr = toWord16 v `unsafeShiftL` 8
   let addresses = fmap (+ startingAddr) [0..255]
   forM_ addresses (\addr -> do
     oamA <- loadPpu oamAddress
@@ -419,7 +419,7 @@ writeDMA v = do
 
 writeControl :: Word8 -> Emulator ()
 writeControl v = do
-  storePpu nameTable $ case (v `shiftR` 0) .&. 3 of
+  storePpu nameTable $ case (v `unsafeShiftR` 0) .&. 3 of
     0 -> 0x2000
     1 -> 0x2400
     2 -> 0x2800
@@ -430,7 +430,7 @@ writeControl v = do
   storePpu spriteSize $ if testBit v 5 then Double else Normal
   storePpu nmiEnabled $ testBit v 7
   tv <- loadPpu tempVramAddress
-  storePpu tempVramAddress ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `shiftL` 10)
+  storePpu tempVramAddress ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `unsafeShiftL` 10)
 
 writeMask :: Word8 -> Emulator ()
 writeMask v = do
@@ -458,12 +458,12 @@ writeScroll v = do
   wv <- loadPpu writeToggle
   tv <- loadPpu tempVramAddress
   if wv then do
-    let tv' = (tv .&. 0x8FFF) .|. ((toWord16 v .&. 0x07) `shiftL` 12)
-    let tv'' = (tv' .&. 0xFC1F) .|. ((toWord16 v .&. 0xF8) `shiftL` 2)
+    let tv' = (tv .&. 0x8FFF) .|. ((toWord16 v .&. 0x07) `unsafeShiftL` 12)
+    let tv'' = (tv' .&. 0xFC1F) .|. ((toWord16 v .&. 0xF8) `unsafeShiftL` 2)
     storePpu tempVramAddress tv''
     storePpu writeToggle False
   else do
-    let tv' = (tv .&. 0xFFE0) .|. (toWord16 v `shiftR` 3)
+    let tv' = (tv .&. 0xFFE0) .|. (toWord16 v `unsafeShiftR` 3)
     storePpu tempVramAddress tv'
     storePpu fineX $ v .&. 0x07
     storePpu writeToggle True
@@ -478,7 +478,7 @@ writeAddress v = do
     storePpu currentVramAddress tv'
     storePpu writeToggle False
   else do
-    let tv' = (tv .&. 0x80FF) .|. ((toWord16 v .&. 0x3F) `shiftL` 8)
+    let tv' = (tv .&. 0x80FF) .|. ((toWord16 v .&. 0x3F) `unsafeShiftL` 8)
     storePpu tempVramAddress tv'
     storePpu writeToggle True
 
@@ -553,42 +553,32 @@ newPPU = do
     -- Temp vars
     nameTableByte attrTableByte loTileByte hiTileByte tileData sprites
 
--- readPalette :: Word16 -> Emulator Word8
--- readPalette addr = with ppu $ \ppu ->
---   VUM.unsafeRead (paletteData ppu) addr
---   where addr = fromIntegral $ if (addr >= 16) && (addr `mod` 4 == 0) then addr - 16 else addr
-
 mirroredPaletteAddr :: Word16 -> Word16
-mirroredPaletteAddr addr = if addr' >= 16 && addr' `mod` 4 == 0 then addr' - 16 else addr'
-  where addr' = addr `mod` 32
+mirroredPaletteAddr addr = if addr' >= 16 && addr' `rem` 4 == 0 then addr' - 16 else addr'
+  where addr' = addr `rem` 32
 
 mirroredNametableAddr :: Word16 -> Mirror -> Word16
 mirroredNametableAddr addr mirror = 0x2000 + lookup + offset
-  where addr' = (addr - 0x2000) `mod` 0x1000
+  where addr' = (addr - 0x2000) `rem` 0x1000
         tableIndex = fromIntegral $ addr' `div` 0x0400
-        lookup = ((nameTableMirrorLookup V.! fromEnum mirror) V.! tableIndex) * 0x0400
-        offset = fromIntegral $ addr' `mod` 0x0400
-
-nameTableMirrorLookup :: V.Vector (V.Vector Word16)
-nameTableMirrorLookup = V.fromList (fmap V.fromList [
-    [0, 0, 1, 1],
-    [0, 1, 0, 1],
-    [0, 0, 0, 0],
-    [1, 1, 1, 1],
-    [0, 1, 2, 3]
-  ])
+        lookup = ((nameTableMirrorLookup `V.unsafeIndex` fromEnum mirror) `V.unsafeIndex` tableIndex) * 0x0400
+        offset = fromIntegral $ addr' `rem` 0x0400
+        nameTableMirrorLookup = V.fromList (fmap V.fromList [
+            [0, 0, 1, 1],
+            [0, 1, 0, 1],
+            [0, 0, 0, 0],
+            [1, 1, 1, 1],
+            [0, 1, 2, 3]
+          ])
 
 loadScreen :: Emulator (VUM.IOVector Word8)
 loadScreen = with ppu $ \ppu ->
   pure $ screen ppu
 
 writeScreen :: Coords -> Color -> Emulator ()
-writeScreen coords color = with ppu $ \ppu -> do
-  let (r, g, b) = color
-  let offset = fromIntegral $ translateXY coords 256 * 3
+writeScreen (x, y) (r, g, b) = with ppu $ \ppu -> do
+  let offset = (x + (y * 256)) * 3
   VUM.write (screen ppu) (offset + 0) r
   VUM.write (screen ppu) (offset + 1) g
   VUM.write (screen ppu) (offset + 2) b
 
-translateXY :: Coords -> Int -> Int
-translateXY (x, y) width = x + (y * width)

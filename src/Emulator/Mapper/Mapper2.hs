@@ -44,7 +44,7 @@ read (Mapper2 Cartridge {..} _ prgBank1 prgBank2) addr
 write :: Mapper2 -> Word16 -> Word8 -> IO ()
 write (Mapper2 Cartridge {..} prgBanks prgBank1 _) addr v
   | addr' < 0x2000 = VUM.unsafeWrite chrRom addr' v
-  | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v `mod` prgBanks)
+  | addr' >= 0x8000 = modifyIORef prgBank1 (const $ toInt v `rem` prgBanks)
   | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
   | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
   where addr' = fromIntegral addr

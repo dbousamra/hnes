@@ -61,10 +61,10 @@ parse bs = do
   prg <- VU.unsafeThaw $ VU.fromList $ BS.unpack prgRom
   sram <- VUM.replicate 0x2000 0
 
-  let mirrorV = (ctrl1 .&. 1) .|. (((ctrl1 `shiftR` 3) .&. 1) `shiftR` 1)
+  let mirrorV = (ctrl1 .&. 1) .|. (((ctrl1 `unsafeShiftR` 3) .&. 1) `unsafeShiftR` 1)
   mirror <- newIORef $ toEnum mirrorV
 
-  let mapper = (ctrl1 `shiftR` 4) .|. ((ctrl2 `shiftR` 4) `shiftL` 4)
+  let mapper = (ctrl1 `unsafeShiftR` 4) .|. ((ctrl2 `unsafeShiftR` 4) `unsafeShiftL` 4)
 
   pure $ Cartridge chr prg sram mirror mapper
 

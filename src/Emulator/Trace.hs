@@ -43,7 +43,7 @@ mkTrace op = do
   let instrLength = len op
   let a1R = if instrLength < 2 then 0x0 else a1
   let a2R = if instrLength < 3 then 0x0 else a2
-  pure (Trace pcv spv av xv yv pv op a0 a1R a2R ((cycles * 3) `mod` 341))
+  pure (Trace pcv spv av xv yv pv op a0 a1R a2R ((cycles * 3) `rem` 341))
 
 renderTrace :: Trace -> String
 renderTrace (Trace pcv spv av xv yv pv (Opcode _ mnem _ _ _ _) a0 a1 a2 cyc) =

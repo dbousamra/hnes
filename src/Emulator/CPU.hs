@@ -21,7 +21,7 @@ reset = do
   storeCpu sp 0xFD
   storeCpu p 0x24
 
-{-# INLINE step #-}
+
 step :: Emulator Int
 step = do
   -- Start counting the number of cycles.
@@ -250,9 +250,9 @@ asl mode addr = do
   v <- case mode of
       Accumulator -> loadCpu a
       _           -> readCpuMemory8 addr
-  let i = (v `shiftR` 7) .&. 1
+  let i = (v `unsafeShiftR` 7) .&. 1
   setFlag Carry (toEnum . fromIntegral $ i)
-  let shiftedV = v `shiftL` 1
+  let shiftedV = v `unsafeShiftL` 1
   case mode of
       Accumulator -> storeCpu a shiftedV
       _           -> writeCpuMemory8 addr shiftedV
@@ -454,7 +454,7 @@ lsr mode addr = do
       _           -> readCpuMemory8 addr
 
   setFlag Carry (toEnum . fromIntegral $ v .&. 1)
-  let shiftedV = v `shiftR` 1
+  let shiftedV = v `unsafeShiftR` 1
   case mode of
       Accumulator -> storeCpu a shiftedV
       _           -> writeCpuMemory8 addr shiftedV
@@ -506,8 +506,8 @@ rol mode addr = do
       Accumulator -> loadCpu a
       _           -> readCpuMemory8 addr
   cv <- (fromIntegral . fromEnum) <$> getFlag Carry
-  setFlag Carry (toEnum $ fromIntegral $ (v `shiftR` 7) .&. 1)
-  let shiftedV = (v `shiftL` 1) .|. cv
+  setFlag Carry (toEnum $ fromIntegral $ (v `unsafeShiftR` 7) .&. 1)
+  let shiftedV = (v `unsafeShiftL` 1) .|. cv
   case mode of
       Accumulator -> storeCpu a shiftedV
       _           -> writeCpuMemory8 addr shiftedV
@@ -521,7 +521,7 @@ ror mode addr = do
       _           -> readCpuMemory8 addr
   cv <- (fromIntegral . fromEnum) <$> getFlag Carry
   setFlag Carry (toEnum $ fromIntegral $ v .&. 1)
-  let shiftedV = (v `shiftR` 1) .|. (cv `shiftL` 7)
+  let shiftedV = (v `unsafeShiftR` 1) .|. (cv `unsafeShiftL` 7)
   case mode of
       Accumulator -> storeCpu a shiftedV
       _           -> writeCpuMemory8 addr shiftedV
@@ -658,8 +658,8 @@ arr addr = do
   and addr
   ror Accumulator addr
   a <- loadCpu a
-  let bit5 = (a `shiftR` 5) .&. 0x1 == 1
-  let bit6 = (a `shiftR` 6) .&. 0x1 == 1
+  let bit5 = (a `unsafeShiftR` 5) .&. 0x1 == 1
+  let bit6 = (a `unsafeShiftR` 6) .&. 0x1 == 1
   setFlag Carry bit6
   setFlag Overflow (bit6 `xor` bit5)
 
@@ -736,9 +736,7 @@ shx addr = do
 
 
 shy :: Word16 -> Emulator ()
-shy addr = do
-  pure ()
-
+shy addr = pure ()
 
 -- NMI - Non Maskable Interrupt. Not strictly an opcode, but can represented as one
 nmi :: Emulator ()

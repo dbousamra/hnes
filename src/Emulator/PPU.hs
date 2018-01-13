@@ -5,7 +5,7 @@ module Emulator.PPU (
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits              (shiftL, shiftR, xor, (.&.), (.|.))
+import           Data.Bits              (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
 import           Data.Char              (toLower)
 import           Data.IORef
 import           Data.Maybe             (fromMaybe)
@@ -21,7 +21,6 @@ reset = do
   storePpu scanline 240
   storePpu verticalBlank False
 
-{-# INLINE step #-}
 step :: Emulator ()
 step = do
   (scanline, cycle) <- tick
@@ -45,7 +44,6 @@ tick = do
   cycles' <- loadPpu ppuCycles
   pure (scanline', cycles')
 
-{-# INLINE handleLinePhase #-}
 handleLinePhase :: Int -> Int -> Emulator ()
 handleLinePhase scanline cycle = do
   let preLine = scanline == 261
@@ -72,7 +70,7 @@ handleLinePhase scanline cycle = do
       copyY
 
     when (preLine || visibleLine) $ do
-      when ((preFetchCycle || visibleCycle) && cycle `mod` 8 == 0)
+      when ((preFetchCycle || visibleCycle) && cycle `rem` 8 == 0)
         incrementX
 
       when (cycle == 256)
@@ -92,7 +90,6 @@ handleLinePhase scanline cycle = do
     exitVBlank
     storePpu spriteZeroHit False
 
-{-# INLINE renderPixel #-}
 renderPixel :: Int -> Int -> Emulator ()
 renderPixel scanline cycle = do
   let coords = (cycle - 1, scanline)
@@ -105,7 +102,7 @@ getBackgroundPixel :: Coords -> Emulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
   fineX <- loadPpu fineX
-  let scrolled = tileData `shiftR` fromIntegral ((7 - fineX) * 4)
+  let scrolled = tileData `unsafeShiftR` fromIntegral ((7 - fineX) * 4)
   pure $ fromIntegral (scrolled .&. 0x0F)
 
 getSpritePixel :: Coords -> Emulator (Maybe (Sprite, Word8))
@@ -119,9 +116,9 @@ getSpritePixel coords = do
       let offset = fst coords - x
       if offset >= 0 && offset <= 7 then do
         let nextOffset = fromIntegral ((7 - offset) * 4) :: Word8
-        let shifted = fromIntegral (sPattern `shiftR` fromIntegral nextOffset) :: Word8
+        let shifted = fromIntegral (sPattern `unsafeShiftR` fromIntegral nextOffset) :: Word8
         let color = shifted .&. 0x0F
-        if color `mod` 4 /= 0
+        if color `rem` 4 /= 0
           then Just (sprite, color)
           else Nothing
       else
@@ -131,13 +128,13 @@ getComposedColor :: Coords -> Word8 -> Maybe (Sprite, Word8) -> Emulator Color
 getComposedColor (x, y) bg sprite = do
   color <- getColor
   index <- readPpuMemory $ 0x3F00 + fromIntegral color
-  pure $ getPaletteColor (index `mod` 64)
+  pure $ getPaletteColor (index `rem` 64)
   where
-    b = bg `mod` 4 /= 0
+    b = bg `rem` 4 /= 0
     (sc, ind, priority) = case sprite of
       Just (s, c) -> (c, sIndex s, sPriority s)
       Nothing     -> (0, 0, 0)
-    s =  sc `mod` 4 /= 0
+    s =  sc `rem` 4 /= 0
     getColor
       | not b && not s = pure 0
       | not b && s = pure $ sc .|. 0x10
@@ -151,8 +148,8 @@ getComposedColor (x, y) bg sprite = do
 
 fetch :: Int -> Int -> Emulator ()
 fetch scanline cycle = do
-  modifyPpu tileData (`shiftL` 4)
-  case cycle `mod` 8 of
+  modifyPpu tileData (`unsafeShiftL` 4)
+  case cycle `rem` 8 of
     1 -> fetchNameTableValue
     3 -> fetchAttributeTableValue
     5 -> fetchLowTileValue
@@ -169,15 +166,15 @@ fetchNameTableValue = do
 fetchAttributeTableValue :: Emulator ()
 fetchAttributeTableValue = do
   v <- loadPpu currentVramAddress
-  v' <- readPpuMemory $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `shiftR` 4) .&. 0x38) .|. ((v `shiftR` 2) .&. 0x07)
-  let shift = fromIntegral $ ((v `shiftR` 4) .&. 4) .|. (v .&. 2)
-  let atv = ((v' `shiftR` shift) .&. 3) `shiftL` 2
+  v' <- readPpuMemory $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `unsafeShiftR` 4) .&. 0x38) .|. ((v `unsafeShiftR` 2) .&. 0x07)
+  let shift = fromIntegral $ ((v `unsafeShiftR` 4) .&. 4) .|. (v .&. 2)
+  let atv = ((v' `unsafeShiftR` shift) .&. 3) `unsafeShiftL` 2
   storePpu attrTableByte atv
 
 fetchLowTileValue :: Emulator ()
 fetchLowTileValue = do
   v <- loadPpu currentVramAddress
-  let fineY = (v `shiftR` 12) .&. 7
+  let fineY = (v `unsafeShiftR` 12) .&. 7
   bt <- loadPpu bgTable
   ntv <- loadPpu nameTableByte
   ltv <- readPpuMemory $ bt + fromIntegral ntv * 16 + fineY
@@ -188,14 +185,14 @@ fetchHighTileValue = do
   ntv <- loadPpu nameTableByte
   v <- loadPpu currentVramAddress
   bt <- loadPpu bgTable
-  let fineY = (v `shiftR` 12) .&. 7
+  let fineY = (v `unsafeShiftR` 12) .&. 7
   htv <- readPpuMemory $ bt + fromIntegral ntv * 16 + fineY + 8
   storePpu hiTileByte htv
 
 fetchTileData :: Emulator Word32
 fetchTileData = do
   td <- loadPpu tileData
-  pure $ fromIntegral $ td `shiftR` 32
+  pure $ fromIntegral $ td `unsafeShiftR` 32
 
 storeTileData :: Emulator ()
 storeTileData = do
@@ -205,12 +202,12 @@ storeTileData = do
 
   let td = do
         i <- V.fromList [0..7]
-        let p1 = ((lotv `shiftL` i) .&. 0x80) `shiftR` 7
-        let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
+        let p1 = ((lotv `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 7
+        let p2 = ((hitv `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 6
         pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
 
   let td' = V.foldl' op 0 td
-       where op acc i = (acc `shiftL` 4) .|. i
+       where op acc i = (acc `unsafeShiftL` 4) .|. i
 
   modifyPpu tileData (\x -> x .|. fromIntegral td')
 
@@ -243,7 +240,7 @@ incrementY = do
     modifyPpu currentVramAddress (+ 0x1000)
   else do
     modifyPpu currentVramAddress (.&. 0x8FFF)
-    let y = (v .&. 0x03E0) `shiftR` 5
+    let y = (v .&. 0x03E0) `unsafeShiftR` 5
 
     y' <- if y == 29 then do
       modifyPpu currentVramAddress (`xor` 0x0800)
@@ -254,7 +251,7 @@ incrementY = do
       pure $ y + 1
 
     v' <- loadPpu currentVramAddress
-    storePpu currentVramAddress ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
+    storePpu currentVramAddress ((v' .&. 0xFC1F) .|. (y' `unsafeShiftL` 5))
 
 evaluateSprites :: Int -> Emulator ()
 evaluateSprites scanline = do
@@ -277,7 +274,7 @@ getSpriteAt scanline size i = do
     loTileByte <- readPpuMemory addr
     hiTileByte <- readPpuMemory $ addr + 8
     let spritePattern = decodeSpritePattern attrByte loTileByte hiTileByte
-    let priority = (attrByte `shiftR` 5) .&. 1
+    let priority = (attrByte `unsafeShiftR` 5) .&. 1
     pure $ Just $ Sprite i (fromIntegral x, fromIntegral y) tileIndexByte attrByte spritePattern priority
   else
     pure Nothing
@@ -285,22 +282,22 @@ getSpriteAt scanline size i = do
 decodeSpritePattern :: Word8 -> Word8 -> Word8 -> Word32
 decodeSpritePattern attr lo hi = tileData'
   where
-  atv = (attr .&. 3) `shiftL` 2
+  atv = (attr .&. 3) `unsafeShiftL` 2
   tileData = do
     i <- V.fromList [0..7]
     let (p1, p2) = if attr .&. 0x40 == 0x40
         then do
-          let p1 = ((lo `shiftR` i) .&. 0x1) `shiftL` 0
-          let p2 = ((hi `shiftR` i) .&. 0x1) `shiftL` 1
+          let p1 = ((lo `unsafeShiftR` i) .&. 0x1) `unsafeShiftL` 0
+          let p2 = ((hi `unsafeShiftR` i) .&. 0x1) `unsafeShiftL` 1
           (p1, p2)
         else do
-          let p1 = ((lo `shiftL` i) .&. 0x80) `shiftR` 7
-          let p2 = ((hi `shiftL` i) .&. 0x80) `shiftR` 6
+          let p1 = ((lo `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 7
+          let p2 = ((hi `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 6
           (p1, p2)
 
     pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
   tileData' = V.foldl' op 0 tileData
-       where op acc i = (acc `shiftL` 4) .|. i
+       where op acc i = (acc `unsafeShiftL` 4) .|. i
 
 getSpriteAddress :: Int -> SpriteSize -> Word8 -> Word8 -> Emulator Word16
 getSpriteAddress row size attr tile = case size of
@@ -335,7 +332,7 @@ idle :: Emulator ()
 idle = pure ()
 
 getPaletteColor :: Word8 -> Color
-getPaletteColor index = palette V.! fromIntegral index where
+getPaletteColor index = palette `V.unsafeIndex` fromIntegral index where
   palette = V.fromList [
     (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88), (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
     (0x5C, 0x00, 0x7E), (0x6E, 0x00, 0x40), (0x6C, 0x06, 0x00), (0x56, 0x1D, 0x00),

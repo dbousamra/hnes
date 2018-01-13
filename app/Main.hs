@@ -42,7 +42,7 @@ appLoop lastTime frames renderer window = do
   oldKeys <- loadKeys
   storeKeys (intentsToKeys oldKeys intents)
   stepFrame
-  step
+  -- step
   texture <- render renderer
   copy renderer texture Nothing Nothing
   SDL.present renderer
@@ -52,15 +52,15 @@ appLoop lastTime frames renderer window = do
 
   if diff > 1.0 then do
     let fps = round $ fromIntegral frames / diff
-    (windowTitle window) $= (T.pack $ "FPS = " ++ show fps)
-    unless (elem Exit intents) (appLoop time 0 renderer window)
+    windowTitle window $= T.pack ("FPS = " ++ show fps)
+    unless (Exit `elem`  intents) (appLoop time 0 renderer window)
   else
-    unless (elem Exit intents) (appLoop lastTime (frames + 1) renderer window)
+    unless (Exit `elem` intents) (appLoop lastTime (frames + 1) renderer window)
 
 render :: SDL.Renderer -> Emulator SDL.Texture
 render renderer = do
   mv <- loadScreen
-  surface <- createRGBSurfaceFrom mv (V2 256 240) (256 * fromIntegral scale) SDL.RGB24
+  surface <- createRGBSurfaceFrom mv (V2 256 240) (256 * 3) SDL.RGB24
   texture <- createTextureFromSurface renderer surface
   SDL.freeSurface surface
   pure texture
@@ -96,7 +96,7 @@ intentsToKeys = foldl' op
           Exit           -> keys
 
 scale :: Int
-scale = 3
+scale = 2
 
 width :: Int
 width = 256
