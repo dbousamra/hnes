@@ -43,9 +43,7 @@ read :: Controller -> IO Word8
 read c = do
   indexV <- readIORef $ index c
   keysDownV <- readIORef $ keysDown c
-
-  let isKeyDown = elem (toEnum indexV) keysDownV
-  let value =  if (indexV < 8 && isKeyDown) then 1 else 0
+  let value =  if indexV < 8 && elem (toEnum indexV) keysDownV then 1 else 0
   modifyIORef' (index c) (+1)
 
   strobeV <- readIORef $ strobe c

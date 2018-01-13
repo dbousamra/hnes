@@ -95,7 +95,7 @@ intentsToKeys = foldl' op
           Exit           -> keys
 
 scale :: Int
-scale = 2
+scale = 3
 
 width :: Int
 width = 256
