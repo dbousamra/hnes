@@ -27,6 +27,9 @@ module Emulator.Nes (
   , writeCpuMemory8
   , writeCpuMemory16
   , readPpuMemory
+  , writeControl
+  , writeMask
+  , writeOAMAddress
   , readOAMData
   , readPalette
   , storeKeys
@@ -191,12 +194,14 @@ modifyPpu field v = with (field . ppu) (`modifyIORef'` v)
 readCpuMemory8 :: Word16 -> Emulator Word8
 readCpuMemory8 addr
   | addr < 0x2000 = readCPURam addr
-  | addr < 0x4000 = readPPURegister addr
+  | addr < 0x4000 = readPPURegister $ 0x2000 + addr `rem` 8
+  | addr == 0x4014 = readPPURegister addr
+  | addr == 0x4015 = error "APU read not implemented"
   | addr == 0x4016 = readController
-  | addr >= 0x4000 && addr <= 0x4017 = pure 0
-  | addr >= 0x4018 && addr <= 0x401F = error "APU read not implemented"
+  | addr == 0x4017 = pure 0
+  | addr < 0x6000 = pure 0
   | addr >= 0x6000 = readMapper addr
-  | otherwise = error "Erroneous read detected!"
+  | otherwise = error $ "Erroneous read detected at " ++ show addr ++ "!"
 
 readCpuMemory16 :: Word16 -> Emulator Word16
 readCpuMemory16 addr = do
@@ -213,7 +218,7 @@ writeCpuMemory8 addr value
   | addr >= 0x4000 && addr <= 0x4017 = pure ()
   | addr >= 0x4018 && addr <= 0x401F = pure ()
   | addr >= 0x6000 = writeMapper addr value
-  | otherwise = error "Erroneous write detected!"
+  | otherwise = error $ "Erroneous write detected at " ++ show addr ++ "!"
 
 writeCpuMemory16 :: Word16 -> Word16 -> Emulator ()
 writeCpuMemory16 addr value = do
@@ -226,7 +231,7 @@ readPpuMemory addr
   | addr' < 0x2000 = readMapper addr'
   | addr' < 0x3F00 = readNametableData addr'
   | addr' < 0x4000 = readPalette addr'
-  | otherwise = error "Erroneous read detected!"
+  | otherwise = error $ "Erroneous read detected at " ++ show addr ++ "!"
   where addr' = addr `rem` 0x4000
 
 writePPUMemory :: Word16 -> Word8 -> Emulator ()
@@ -234,7 +239,7 @@ writePPUMemory addr v
   | addr' < 0x2000 = writeMapper addr' v
   | addr' < 0x3F00 = writeNametableData addr' v
   | addr' < 0x4000 = writePalette addr' v
-  | otherwise = error "Erroneous write detected!"
+  | otherwise = error $ "Erroneous write detected at " ++ show addr ++ "!"
   where addr' = addr `rem` 0x4000
 
 data Flag
@@ -320,11 +325,11 @@ readPalette addr = with ppu $ \ppu ->
   VUM.unsafeRead (paletteData ppu) (fromIntegral $ mirroredPaletteAddr addr)
 
 readPPURegister :: Word16 -> Emulator Word8
-readPPURegister addr = case 0x2000 + addr `rem` 8 of
+readPPURegister addr = case addr of
   0x2002 -> readStatus
   0x2004 -> readOAMData'
   0x2007 -> readData
-  other  -> error $ "Unimplemented read at " ++ show other
+  other  -> pure 0
 
 writePPURegister :: Word16 -> Word8 -> Emulator ()
 writePPURegister addr v = case addr of

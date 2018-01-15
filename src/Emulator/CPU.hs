@@ -5,13 +5,14 @@ module Emulator.CPU(
 ) where
 
 import           Control.Monad
-import           Data.Bits       hiding (bit)
+import           Control.Monad.IO.Class (liftIO)
+import           Data.Bits              hiding (bit)
 import           Data.Word
 import           Emulator.Nes
 import           Emulator.Opcode
-import           Emulator.Trace  (Trace, mkTrace)
+import           Emulator.Trace         (Trace, mkTrace, renderTrace)
 import           Emulator.Util
-import           Prelude         hiding (and, compare)
+import           Prelude                hiding (and, compare)
 
 reset :: Emulator ()
 reset = do
@@ -29,8 +30,8 @@ step = do
   handleInterrupts
   opcode <- loadNextOpcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
-  addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
+  addCycles $ getCycles opcode pageCrossed
   runInstruction opcode addr
   endingCycles <- loadCpu cpuCycles
   pure $ endingCycles - startingCycles
@@ -46,8 +47,8 @@ stepT = do
   opcode <- loadNextOpcode
   trace <- mkTrace opcode
   (pageCrossed, addr) <- addressPageCrossForMode (mode opcode)
-  addCycles $ getCycles opcode pageCrossed
   incrementPc opcode
+  addCycles $ getCycles opcode pageCrossed
   runInstruction opcode addr
   endingCycles <- loadCpu cpuCycles
   pure (endingCycles - startingCycles, trace)

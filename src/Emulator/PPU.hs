@@ -4,18 +4,23 @@ module Emulator.PPU (
 ) where
 
 import           Control.Monad
-import           Data.Bits     (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
-import qualified Data.Vector   as V
+import           Control.Monad.IO.Class (liftIO)
+import           Data.Bits              (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
+import qualified Data.Vector            as V
 import           Data.Word
 import           Emulator.Nes
+import           Emulator.Trace
 import           Emulator.Util
-import           Prelude       hiding (cycle)
+import           Prelude                hiding (cycle)
 
 reset :: Emulator ()
 reset = do
   storePpu ppuCycles 340
   storePpu scanline 240
   storePpu verticalBlank False
+  writeControl 0
+  writeMask 0
+  writeOAMAddress 0
 
 step :: Emulator ()
 step = do
