@@ -36,6 +36,7 @@ module Emulator.Nes (
   , loadKeys
   , writeScreen
   , loadScreen
+  , nmiChange
 ) where
 
 import           Control.Monad
@@ -118,13 +119,17 @@ data PPU = PPU {
   currentVramAddress    :: IORef Word16,
   tempVramAddress       :: IORef Word16,
   oamAddress            :: IORef Word8,
+  -- NMI
+  nmiEnabled            :: IORef Bool,
+  nmiOccurred           :: IORef Bool,
+  nmiDelay              :: IORef Word8,
+  nmiPrevious           :: IORef Bool,
   -- Control register bits
   nameTable             :: IORef Word16,
   incrementMode         :: IORef IncrementMode,
   spriteTable           :: IORef Word16,
   bgTable               :: IORef Word16,
   spriteSize            :: IORef SpriteSize,
-  nmiEnabled            :: IORef Bool,
   -- Mask register bits
   colorMode             :: IORef ColorMode,
   leftBgVisibility      :: IORef Visibility,
@@ -135,10 +140,9 @@ data PPU = PPU {
   intensifyGreens       :: IORef Bool,
   intensifyBlues        :: IORef Bool,
   -- Status register bits
-  lastWrite             :: IORef Word8,
   spriteOverflow        :: IORef Bool,
   spriteZeroHit         :: IORef Bool,
-  verticalBlank         :: IORef Bool,
+  -- verticalBlank         :: IORef Bool,
   -- Scroll register
   fineX                 :: IORef Word8,
   -- Data register
@@ -347,12 +351,13 @@ readStatus = do
   registerV <- loadPpu ppuRegister
   spriteOverflowV <- loadPpu spriteOverflow
   spriteZeroHitV <- loadPpu spriteZeroHit
-  vBlankV <- loadPpu verticalBlank
+  nmiOccurred' <- loadPpu nmiOccurred
   let r = registerV .&. 0x1F
   let r' = r .|. fromIntegral (fromEnum spriteOverflowV `unsafeShiftL` 5)
   let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `unsafeShiftL` 6)
-  let rFinal = r'' .|. fromIntegral (fromEnum vBlankV `unsafeShiftL` 7)
-  storePpu verticalBlank False
+  let rFinal = r'' .|. fromIntegral (fromEnum nmiOccurred' `unsafeShiftL` 7)
+  storePpu nmiOccurred False
+  nmiChange
   storePpu writeToggle False
   pure $ fromIntegral rFinal
 
@@ -420,6 +425,7 @@ writeControl v = do
   storePpu bgTable $ if testBit v 4 then 0x1000 else 0x0000
   storePpu spriteSize $ if testBit v 5 then Double else Normal
   storePpu nmiEnabled $ testBit v 7
+  nmiChange
   tv <- loadPpu tempVramAddress
   storePpu tempVramAddress ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `unsafeShiftL` 10)
 
@@ -490,13 +496,17 @@ newPPU = do
   currentVramAddress <- newIORef 0x0
   tempVramAddress <- newIORef 0x0
   oamAddress <- newIORef 0x0
+  -- NMI
+  nmiEnabled <- newIORef False
+  nmiOccurred <- newIORef False
+  nmiDelay <- newIORef 0
+  nmiPrevious <- newIORef False
   -- Control register
   nameTable <- newIORef 0x2000
   incrementMode <- newIORef Horizontal
   spriteTable <- newIORef 0x0000
   bgTable <- newIORef 0x0000
   spriteSize <- newIORef Normal
-  nmiEnabled <- newIORef False
   -- Mask register
   colorMode <- newIORef Color
   leftBgVis <- newIORef Hidden
@@ -507,10 +517,8 @@ newPPU = do
   intensifyGreens <- newIORef False
   intensifyBlues <- newIORef False
   -- Status register
-  lastWrite <- newIORef 0x0
   spriteOverflow <- newIORef False
   spriteZeroHit <- newIORef False
-  vBlankStarted <- newIORef False
   -- Scroll register
   fineX <- newIORef 0x0
   -- Data register
@@ -530,13 +538,15 @@ newPPU = do
     oamData nameTableData paletteData screen
     -- Addresses
     currentVramAddress tempVramAddress oamAddress
+    -- NMI
+    nmiEnabled nmiOccurred nmiDelay nmiPrevious
     -- Control register
-    nameTable incrementMode spriteTable bgTable spriteSize nmiEnabled
+    nameTable incrementMode spriteTable bgTable spriteSize
     -- Mask register
     colorMode leftBgVis leftSpritesVis bgVis spriteVis
     intensifyReds intensifyGreens intensifyBlues
     -- Status register
-    lastWrite spriteOverflow spriteZeroHit vBlankStarted
+    spriteOverflow spriteZeroHit
     -- Scroll register
     fineX
     -- Data register
@@ -572,3 +582,16 @@ writeScreen (x, y) (r, g, b) = with ppu $ \ppu -> do
   VUM.write (screen ppu) (offset + 0) r
   VUM.write (screen ppu) (offset + 1) g
   VUM.write (screen ppu) (offset + 2) b
+
+nmiChange :: Emulator ()
+nmiChange = do
+  enabled <- loadPpu nmiEnabled
+  occurred <- loadPpu nmiOccurred
+  previous <- loadPpu nmiPrevious
+  let nmi = enabled && occurred
+
+  when (nmi && not previous) $
+    storePpu nmiDelay 15
+
+  storePpu nmiPrevious nmi
+

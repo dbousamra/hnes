@@ -10,7 +10,7 @@ import           Data.Bits              hiding (bit)
 import           Data.Word
 import           Emulator.Nes
 import           Emulator.Opcode
-import           Emulator.Trace         (Trace, mkTrace, renderTrace)
+import           Emulator.Trace         (Trace, mkTrace)
 import           Emulator.Util
 import           Prelude                hiding (and, compare)
 
@@ -142,7 +142,9 @@ handleInterrupts :: Emulator ()
 handleInterrupts = do
   int <- loadCpu interrupt
   case int of
-    Just NMI -> nmi
+    Just NMI -> do
+      liftIO $ putStrLn "in nmi"
+      nmi
     Just IRQ -> error "not handling IRQ yet"
     Nothing  -> pure ()
   storeCpu interrupt Nothing

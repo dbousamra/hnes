@@ -4,20 +4,18 @@ module Emulator.PPU (
 ) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class (liftIO)
-import           Data.Bits              (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
-import qualified Data.Vector            as V
+-- import           Control.Monad.IO.Class (liftIO)
+import           Data.Bits     (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
+import qualified Data.Vector   as V
 import           Data.Word
 import           Emulator.Nes
-import           Emulator.Trace
 import           Emulator.Util
-import           Prelude                hiding (cycle)
+import           Prelude       hiding (cycle)
 
 reset :: Emulator ()
 reset = do
   storePpu ppuCycles 340
   storePpu scanline 240
-  storePpu verticalBlank False
   writeControl 0
   writeMask 0
   writeOAMAddress 0
@@ -29,6 +27,8 @@ step = do
 
 tick :: Emulator Coords
 tick = do
+  handleInterrupts
+
   modifyPpu ppuCycles (+1)
   cycles <- loadPpu ppuCycles
 
@@ -45,14 +45,26 @@ tick = do
   cycles' <- loadPpu ppuCycles
   pure (scanline', cycles')
 
+handleInterrupts :: Emulator ()
+handleInterrupts = do
+  delay <- loadPpu nmiDelay
+  enabled <- loadPpu nmiEnabled
+  occurred <- loadPpu nmiOccurred
+
+  when (delay > 0) $ do
+    modifyPpu nmiDelay (subtract 1)
+    delay' <- loadPpu nmiDelay
+    when (delay' == 0 && enabled && occurred) $
+      storeCpu interrupt (Just NMI)
+
 handleLinePhase :: Int -> Int -> Emulator ()
 handleLinePhase scanline cycle = do
   let preLine = scanline == 261
   let visibleLine = scanline < 240
   let renderLine = preLine || visibleLine
 
-  let visibleCycle = cycle >= 1 && cycle <= 256
   let preFetchCycle = cycle >= 321 && cycle <= 336
+  let visibleCycle = cycle >= 1 && cycle <= 256
   let fetchCycle = visibleCycle || (cycle >= 321 && cycle <= 336)
 
   bgVisible <- loadPpu bgVisibility
@@ -322,12 +334,13 @@ isSpriteVisible row spriteSize = row >= 0 && row < h
 
 enterVBlank :: Emulator ()
 enterVBlank = do
-  storePpu verticalBlank True
-  generateNMI <- loadPpu nmiEnabled
-  when generateNMI $ storeCpu interrupt (Just NMI)
+  storePpu nmiOccurred True
+  nmiChange
 
 exitVBlank :: Emulator ()
-exitVBlank = storePpu verticalBlank False
+exitVBlank = do
+  storePpu nmiOccurred False
+  nmiChange
 
 idle :: Emulator ()
 idle = pure ()
