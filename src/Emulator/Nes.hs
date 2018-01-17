@@ -165,6 +165,9 @@ runEmulator bs (Emulator reader) = do
   nes <- new cart
   runReaderT reader nes
 
+debug :: String -> Emulator ()
+debug = liftIO . putStrLn
+
 {-# INLINE with #-}
 with :: (Nes -> b) -> (b -> IO a) -> Emulator a
 with field f = do
@@ -200,7 +203,7 @@ readCpuMemory8 addr
   | addr < 0x2000 = readCPURam addr
   | addr < 0x4000 = readPPURegister $ 0x2000 + addr `rem` 8
   | addr == 0x4014 = readPPURegister addr
-  | addr == 0x4015 = error "APU read not implemented"
+  | addr == 0x4015 = pure 0
   | addr == 0x4016 = readController
   | addr == 0x4017 = pure 0
   | addr < 0x6000 = pure 0
@@ -336,15 +339,17 @@ readPPURegister addr = case addr of
   other  -> pure 0
 
 writePPURegister :: Word16 -> Word8 -> Emulator ()
-writePPURegister addr v = case addr of
-  0x2000 -> writeControl v
-  0x2001 -> writeMask v
-  0x2003 -> writeOAMAddress v
-  0x2004 -> writeOAMData v
-  0x2005 -> writeScroll v
-  0x2006 -> writeAddress v
-  0x2007 -> writeData v
-  0x4014 -> writeDMA v
+writePPURegister addr v = do
+  storePpu ppuRegister v
+  case addr of
+    0x2000 -> writeControl v
+    0x2001 -> writeMask v
+    0x2003 -> writeOAMAddress v
+    0x2004 -> writeOAMData v
+    0x2005 -> writeScroll v
+    0x2006 -> writeAddress v
+    0x2007 -> writeData v
+    0x4014 -> writeDMA v
 
 readStatus :: Emulator Word8
 readStatus = do

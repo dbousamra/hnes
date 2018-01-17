@@ -308,9 +308,9 @@ brk = do
 bit :: Word16 -> Emulator ()
 bit addr = do
   v <- readCpuMemory8 addr
+  setV $ (v `shiftR` 6) .&. 1
   av <- loadCpu a
   setZ (v .&. av)
-  setV v
   setN v
 
 -- BNE - Branch if zero not set
