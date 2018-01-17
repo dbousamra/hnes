@@ -34,10 +34,10 @@ read :: Mapper3 -> Word16 -> IO Word8
 read (Mapper3 Cartridge {..} chrBank prgBank1 prgBank2) addr
   | addr' <  0x2000 = do
     chrBankV <- readIORef chrBank
-    VUM.unsafeRead chrRom ((chrBankV * 0x2000) + addr')
-  | addr' >= 0xC000 = VUM.unsafeRead prgRom ((prgBank2 * 0x4000) + (addr' - 0xC000))
-  | addr' >= 0x8000 = VUM.unsafeRead prgRom ((prgBank1 * 0x4000) + (addr' - 0x8000))
-  | addr' >= 0x6000 = VUM.unsafeRead sram (addr' - 0x6000)
+    VUM.read chrRom ((chrBankV * 0x2000) + addr')
+  | addr' >= 0xC000 = VUM.read prgRom ((prgBank2 * 0x4000) + (addr' - 0xC000))
+  | addr' >= 0x8000 = VUM.read prgRom ((prgBank1 * 0x4000) + (addr' - 0x8000))
+  | addr' >= 0x6000 = VUM.read sram (addr' - 0x6000)
   | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 
@@ -45,8 +45,8 @@ write :: Mapper3 -> Word16 -> Word8 -> IO ()
 write (Mapper3 Cartridge {..} chrBank _ _) addr v
   | addr' < 0x2000 = do
     chrBankV <- readIORef chrBank
-    VUM.unsafeWrite chrRom ((chrBankV * 0x2000) + addr') v
+    VUM.write chrRom ((chrBankV * 0x2000) + addr') v
   | addr' >= 0x8000 = modifyIORef chrBank (const $ toInt v .&. 3)
-  | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
+  | addr' >= 0x6000 = VUM.write sram (addr' - 0x6000) v
   | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
   where addr' = fromIntegral addr

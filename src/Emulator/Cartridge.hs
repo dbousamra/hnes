@@ -57,14 +57,14 @@ parse bs = do
   let chrRom = if numChr == 0 then (BS.replicate chrRomSize 0)
                else sliceBS (headerSize + prgOffset) (headerSize + prgOffset + chrOffset) bs
 
-  chr <- VU.unsafeThaw $ VU.fromList $ BS.unpack chrRom
-  prg <- VU.unsafeThaw $ VU.fromList $ BS.unpack prgRom
+  chr <- VU.thaw $ VU.fromList $ BS.unpack chrRom
+  prg <- VU.thaw $ VU.fromList $ BS.unpack prgRom
   sram <- VUM.replicate 0x2000 0
 
-  let mirrorV = (ctrl1 .&. 1) .|. (((ctrl1 `unsafeShiftR` 3) .&. 1) `unsafeShiftR` 1)
+  let mirrorV = (ctrl1 .&. 1) .|. (((ctrl1 `shiftR` 3) .&. 1) `shiftR` 1)
   mirror <- newIORef $ toEnum mirrorV
 
-  let mapper = (ctrl1 `unsafeShiftR` 4) .|. ((ctrl2 `unsafeShiftR` 4) `unsafeShiftL` 4)
+  let mapper = (ctrl1 `shiftR` 4) .|. ((ctrl2 `shiftR` 4) `shiftL` 4)
 
   pure $ Cartridge chr prg sram mirror mapper
 

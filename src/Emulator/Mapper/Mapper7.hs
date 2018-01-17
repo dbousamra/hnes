@@ -27,24 +27,24 @@ new cart @ Cartridge{..} = do
 
 read :: Mapper7 -> Word16 -> IO Word8
 read (Mapper7 Cartridge {..} prgBank) addr
-  | addr' <  0x2000 = VUM.unsafeRead chrRom addr'
+  | addr' <  0x2000 = VUM.read chrRom addr'
   | addr' >= 0x8000 = do
     prgBankV <- readIORef prgBank
-    VUM.unsafeRead prgRom ((prgBankV * 0x8000) + (addr' - 0x8000))
-  | addr' >= 0x6000 = VUM.unsafeRead sram (addr' - 0x6000)
+    VUM.read prgRom ((prgBankV * 0x8000) + (addr' - 0x8000))
+  | addr' >= 0x6000 = VUM.read sram (addr' - 0x6000)
   | otherwise = error $ "Erroneous cart read detected!: " ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 
 write :: Mapper7 -> Word16 -> Word8 -> IO ()
 write (Mapper7 Cartridge {..} prgBank) addr v
-  | addr' < 0x2000 = VUM.unsafeWrite chrRom addr' v
+  | addr' < 0x2000 = VUM.write chrRom addr' v
   | addr' >= 0x8000 = do
     modifyIORef' prgBank (const $ fromIntegral v .&. 7)
     let m = case v .&. 0x10 of
           0x00 -> MirrorSingle0
           0x10 -> MirrorSingle1
     modifyIORef mirror (const m)
-  | addr' >= 0x6000 = VUM.unsafeWrite sram (addr' - 0x6000) v
+  | addr' >= 0x6000 = VUM.write sram (addr' - 0x6000) v
   | otherwise = error $ "Erroneous cart write detected!" ++ prettifyWord16 addr
   where addr' = fromIntegral addr
 

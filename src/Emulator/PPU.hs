@@ -5,7 +5,7 @@ module Emulator.PPU (
 
 import           Control.Monad
 -- import           Control.Monad.IO.Class (liftIO)
-import           Data.Bits     (unsafeShiftL, unsafeShiftR, xor, (.&.), (.|.))
+import           Data.Bits     (shiftL, shiftR, xor, (.&.), (.|.))
 import qualified Data.Vector   as V
 import           Data.Word
 import           Emulator.Nes
@@ -115,7 +115,7 @@ getBackgroundPixel :: Coords -> Emulator Word8
 getBackgroundPixel coords = do
   tileData <- fetchTileData
   fineX <- loadPpu fineX
-  let scrolled = tileData `unsafeShiftR` fromIntegral ((7 - fineX) * 4)
+  let scrolled = tileData `shiftR` fromIntegral ((7 - fineX) * 4)
   pure $ fromIntegral (scrolled .&. 0x0F)
 
 getSpritePixel :: Coords -> Emulator (Maybe (Sprite, Word8))
@@ -129,7 +129,7 @@ getSpritePixel coords = do
       let offset = fst coords - x
       if offset >= 0 && offset <= 7 then do
         let nextOffset = fromIntegral ((7 - offset) * 4) :: Word8
-        let shifted = fromIntegral (sPattern `unsafeShiftR` fromIntegral nextOffset) :: Word8
+        let shifted = fromIntegral (sPattern `shiftR` fromIntegral nextOffset) :: Word8
         let color = shifted .&. 0x0F
         if color `rem` 4 /= 0
           then Just (sprite, color)
@@ -161,7 +161,7 @@ getComposedColor (x, y) bg sprite = do
 
 fetch :: Int -> Int -> Emulator ()
 fetch scanline cycle = do
-  modifyPpu tileData (`unsafeShiftL` 4)
+  modifyPpu tileData (`shiftL` 4)
   case cycle `rem` 8 of
     1 -> fetchNameTableValue
     3 -> fetchAttributeTableValue
@@ -179,15 +179,15 @@ fetchNameTableValue = do
 fetchAttributeTableValue :: Emulator ()
 fetchAttributeTableValue = do
   v <- loadPpu currentVramAddress
-  v' <- readPpuMemory $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `unsafeShiftR` 4) .&. 0x38) .|. ((v `unsafeShiftR` 2) .&. 0x07)
-  let shift = fromIntegral $ ((v `unsafeShiftR` 4) .&. 4) .|. (v .&. 2)
-  let atv = ((v' `unsafeShiftR` shift) .&. 3) `unsafeShiftL` 2
+  v' <- readPpuMemory $ 0x23C0 .|. (v .&. 0x0C00) .|. ((v `shiftR` 4) .&. 0x38) .|. ((v `shiftR` 2) .&. 0x07)
+  let shift = fromIntegral $ ((v `shiftR` 4) .&. 4) .|. (v .&. 2)
+  let atv = ((v' `shiftR` shift) .&. 3) `shiftL` 2
   storePpu attrTableByte atv
 
 fetchLowTileValue :: Emulator ()
 fetchLowTileValue = do
   v <- loadPpu currentVramAddress
-  let fineY = (v `unsafeShiftR` 12) .&. 7
+  let fineY = (v `shiftR` 12) .&. 7
   bt <- loadPpu bgTable
   ntv <- loadPpu nameTableByte
   ltv <- readPpuMemory $ bt + fromIntegral ntv * 16 + fineY
@@ -198,14 +198,14 @@ fetchHighTileValue = do
   ntv <- loadPpu nameTableByte
   v <- loadPpu currentVramAddress
   bt <- loadPpu bgTable
-  let fineY = (v `unsafeShiftR` 12) .&. 7
+  let fineY = (v `shiftR` 12) .&. 7
   htv <- readPpuMemory $ bt + fromIntegral ntv * 16 + fineY + 8
   storePpu hiTileByte htv
 
 fetchTileData :: Emulator Word32
 fetchTileData = do
   td <- loadPpu tileData
-  pure $ fromIntegral $ td `unsafeShiftR` 32
+  pure $ fromIntegral $ td `shiftR` 32
 
 storeTileData :: Emulator ()
 storeTileData = do
@@ -215,12 +215,12 @@ storeTileData = do
 
   let td = do
         i <- V.fromList [0..7]
-        let p1 = ((lotv `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 7
-        let p2 = ((hitv `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 6
+        let p1 = ((lotv `shiftL` i) .&. 0x80) `shiftR` 7
+        let p2 = ((hitv `shiftL` i) .&. 0x80) `shiftR` 6
         pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
 
   let td' = V.foldl' op 0 td
-       where op acc i = (acc `unsafeShiftL` 4) .|. i
+       where op acc i = (acc `shiftL` 4) .|. i
 
   modifyPpu tileData (\x -> x .|. fromIntegral td')
 
@@ -253,7 +253,7 @@ incrementY = do
     modifyPpu currentVramAddress (+ 0x1000)
   else do
     modifyPpu currentVramAddress (.&. 0x8FFF)
-    let y = (v .&. 0x03E0) `unsafeShiftR` 5
+    let y = (v .&. 0x03E0) `shiftR` 5
 
     y' <- if y == 29 then do
       modifyPpu currentVramAddress (`xor` 0x0800)
@@ -264,7 +264,7 @@ incrementY = do
       pure $ y + 1
 
     v' <- loadPpu currentVramAddress
-    storePpu currentVramAddress ((v' .&. 0xFC1F) .|. (y' `unsafeShiftL` 5))
+    storePpu currentVramAddress ((v' .&. 0xFC1F) .|. (y' `shiftL` 5))
 
 evaluateSprites :: Int -> Emulator ()
 evaluateSprites scanline = do
@@ -287,7 +287,7 @@ getSpriteAt scanline size i = do
     loTileByte <- readPpuMemory addr
     hiTileByte <- readPpuMemory $ addr + 8
     let spritePattern = decodeSpritePattern attrByte loTileByte hiTileByte
-    let priority = (attrByte `unsafeShiftR` 5) .&. 1
+    let priority = (attrByte `shiftR` 5) .&. 1
     pure $ Just $ Sprite i (fromIntegral x, fromIntegral y) tileIndexByte attrByte spritePattern priority
   else
     pure Nothing
@@ -295,22 +295,22 @@ getSpriteAt scanline size i = do
 decodeSpritePattern :: Word8 -> Word8 -> Word8 -> Word32
 decodeSpritePattern attr lo hi = tileData'
   where
-  atv = (attr .&. 3) `unsafeShiftL` 2
+  atv = (attr .&. 3) `shiftL` 2
   tileData = do
     i <- V.fromList [0..7]
     let (p1, p2) = if attr .&. 0x40 == 0x40
         then do
-          let p1 = ((lo `unsafeShiftR` i) .&. 0x1) `unsafeShiftL` 0
-          let p2 = ((hi `unsafeShiftR` i) .&. 0x1) `unsafeShiftL` 1
+          let p1 = ((lo `shiftR` i) .&. 0x1) `shiftL` 0
+          let p2 = ((hi `shiftR` i) .&. 0x1) `shiftL` 1
           (p1, p2)
         else do
-          let p1 = ((lo `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 7
-          let p2 = ((hi `unsafeShiftL` i) .&. 0x80) `unsafeShiftR` 6
+          let p1 = ((lo `shiftL` i) .&. 0x80) `shiftR` 7
+          let p2 = ((hi `shiftL` i) .&. 0x80) `shiftR` 6
           (p1, p2)
 
     pure $ fromIntegral $ atv .|. p1 .|. p2 :: V.Vector Word32
   tileData' = V.foldl' op 0 tileData
-       where op acc i = (acc `unsafeShiftL` 4) .|. i
+       where op acc i = (acc `shiftL` 4) .|. i
 
 getSpriteAddress :: Int -> SpriteSize -> Word8 -> Word8 -> Emulator Word16
 getSpriteAddress row size attr tile = case size of
@@ -346,7 +346,7 @@ idle :: Emulator ()
 idle = pure ()
 
 getPaletteColor :: Word8 -> Color
-getPaletteColor index = palette `V.unsafeIndex` fromIntegral index where
+getPaletteColor index = palette V.! fromIntegral index where
   palette = V.fromList [
     (0x66, 0x66, 0x66), (0x00, 0x2A, 0x88), (0x14, 0x12, 0xA7), (0x3B, 0x00, 0xA4),
     (0x5C, 0x00, 0x7E), (0x6E, 0x00, 0x40), (0x6C, 0x06, 0x00), (0x56, 0x1D, 0x00),
