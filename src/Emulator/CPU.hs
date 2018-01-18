@@ -142,9 +142,7 @@ handleInterrupts :: Emulator ()
 handleInterrupts = do
   int <- loadCpu interrupt
   case int of
-    Just NMI -> do
-      liftIO $ putStrLn "in nmi"
-      nmi
+    Just NMI -> nmi
     Just IRQ -> error "not handling IRQ yet"
     Nothing  -> pure ()
   storeCpu interrupt Nothing
