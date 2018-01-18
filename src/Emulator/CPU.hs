@@ -5,14 +5,13 @@ module Emulator.CPU(
 ) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class (liftIO)
-import           Data.Bits              hiding (bit)
+import           Data.Bits       hiding (bit)
 import           Data.Word
 import           Emulator.Nes
 import           Emulator.Opcode
-import           Emulator.Trace         (Trace, mkTrace)
+import           Emulator.Trace  (Trace, mkTrace)
 import           Emulator.Util
-import           Prelude                hiding (and, compare)
+import           Prelude         hiding (and, compare)
 
 reset :: Emulator ()
 reset = do
