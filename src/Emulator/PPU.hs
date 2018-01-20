@@ -32,7 +32,7 @@ tick = do
   modifyPpu ppuCycles (+1)
   cycles <- loadPpu ppuCycles
 
-  when (cycles > 340) $ do
+  when (cycles > 339) $ do
     storePpu ppuCycles 0
     modifyPpu scanline (+1)
     scanline' <- loadPpu scanline
@@ -48,29 +48,26 @@ tick = do
 handleInterrupts :: Emulator ()
 handleInterrupts = do
   delay <- loadPpu nmiDelay
-  enabled <- loadPpu nmiEnabled
-  occurred <- loadPpu nmiOccurred
-
   when (delay > 0) $ do
     modifyPpu nmiDelay (subtract 1)
+    enabled <- loadPpu nmiEnabled
+    occurred <- loadPpu nmiOccurred
     delay' <- loadPpu nmiDelay
     when (delay' == 0 && enabled && occurred) $
       storeCpu interrupt (Just NMI)
 
 handleLinePhase :: Int -> Int -> Emulator ()
 handleLinePhase scanline cycle = do
+  bgVisible <- loadPpu bgVisibility
+  spritesVisible <- loadPpu spriteVisibility
+  let rendering = bgVisible || spritesVisible
   let preLine = scanline == 261
   let visibleLine = scanline < 240
   let renderLine = preLine || visibleLine
 
   let preFetchCycle = cycle >= 321 && cycle <= 336
   let visibleCycle = cycle >= 1 && cycle <= 256
-  let fetchCycle = visibleCycle || (cycle >= 321 && cycle <= 336)
-
-  bgVisible <- loadPpu bgVisibility
-  spritesVisible <- loadPpu spriteVisibility
-
-  let rendering = bgVisible || spritesVisible
+  let fetchCycle = preFetchCycle || visibleCycle
 
   when rendering $ do
     when (visibleLine && visibleCycle) $
@@ -102,6 +99,7 @@ handleLinePhase scanline cycle = do
   when (preLine && cycle == 1) $ do
     exitVBlank
     storePpu spriteZeroHit False
+    storePpu spriteOverflow False
 
 renderPixel :: Int -> Int -> Emulator ()
 renderPixel scanline cycle = do

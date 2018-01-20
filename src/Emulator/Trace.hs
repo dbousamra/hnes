@@ -49,8 +49,6 @@ renderTrace :: Trace -> String
 renderTrace (Trace pcv spv av xv yv pv (Opcode _ mnem _ _ _ _) a0 a1 a2 cyc) =
   executionPortion ++ registerPortion where
     a0R = printf "%02X" a0 :: String
-    a1R = if a0 == 0x0 then "  " else printf "%02X" a1
-    a2R = if a0 == 0x0 then "  " else printf "%02X" a2
     name = show mnem
-    executionPortion = printf "%4X  %s %s %s  %s %28s" pcv a0R a1R a2R name ""
+    executionPortion = printf "%4X  %s        %s %28s" pcv a0R name ""
     registerPortion = printf "A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3d" av xv yv pv spv cyc
