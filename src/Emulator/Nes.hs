@@ -16,6 +16,7 @@ module Emulator.Nes (
   , Interrupt(..)
   , new
   , runEmulator
+  , debug
   , loadCpu
   , storeCpu
   , modifyCpu
