@@ -742,6 +742,7 @@ nmi = do
   php
   v <- readCpuMemory16 0xFFFA
   storeCpu pc v
+  addCycles 7
 
 -- Moves execution to addr if condition is set
 branch :: Emulator Bool -> Word16 -> Emulator ()
