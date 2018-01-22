@@ -110,6 +110,7 @@ data PPU = PPU {
   frameCount            :: IORef Int,
   writeToggle           :: IORef Bool,
   ppuRegister           :: IORef Word8,
+  oddFrame              :: IORef Bool,
   -- Data
   oamData               :: VUM.IOVector Word8,
   nameTableData         :: VUM.IOVector Word8,
@@ -494,6 +495,7 @@ newPPU = do
   frameCount <- newIORef 0
   writeToggle <- newIORef False
   ppuRegister <- newIORef 0x0
+  oddFrame <- newIORef False
   -- Data
   oamData <- VUM.replicate 0x100 0x0
   nameTableData <- VUM.replicate 0x800 0x0
@@ -540,7 +542,7 @@ newPPU = do
 
   pure $ PPU
     -- Misc
-    cycles scanline frameCount writeToggle ppuRegister
+    cycles scanline frameCount writeToggle ppuRegister oddFrame
     -- Data
     oamData nameTableData paletteData screen
     -- Addresses

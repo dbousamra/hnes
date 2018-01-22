@@ -32,11 +32,13 @@ tick = do
   rendering <- renderingEnabled
   scanline' <- loadPpu scanline
   cycles <- loadPpu ppuCycles
+  oddFrame' <- loadPpu oddFrame
 
-  if rendering && scanline' == 261 && cycles == 339 then do
+  if rendering && oddFrame' && scanline' == 261 && cycles == 339 then do
     storePpu ppuCycles 0
     storePpu scanline 0
     modifyPpu frameCount (+1)
+    modifyPpu oddFrame not
   else do
     modifyPpu ppuCycles (+1)
     when (cycles + 1 > 340) $ do
@@ -45,6 +47,7 @@ tick = do
       when (scanline' + 1 > 261) $ do
         storePpu scanline 0
         modifyPpu frameCount (+1)
+        modifyPpu oddFrame not
 
   sc <- loadPpu scanline
   cy <- loadPpu ppuCycles
