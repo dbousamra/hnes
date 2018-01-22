@@ -37,7 +37,7 @@ module Emulator.Nes (
   , loadKeys
   , writeScreen
   , loadScreen
-  , nmiChange
+  , toggleNmi
 ) where
 
 import           Control.Monad
@@ -120,7 +120,7 @@ data PPU = PPU {
   tempVramAddress       :: IORef Word16,
   oamAddress            :: IORef Word8,
   -- NMI
-  nmiEnabled            :: IORef Bool,
+  nmiOutput             :: IORef Bool,
   nmiOccurred           :: IORef Bool,
   nmiDelay              :: IORef Word8,
   nmiPrevious           :: IORef Bool,
@@ -350,6 +350,7 @@ writePPURegister addr v = do
     0x2006 -> writeAddress v
     0x2007 -> writeData v
     0x4014 -> writeDMA v
+    _      -> error $ "Erroneous write detected at " ++ show addr ++ "!"
 
 readStatus :: Emulator Word8
 readStatus = do
@@ -361,8 +362,7 @@ readStatus = do
   let r' = r .|. fromIntegral (fromEnum spriteOverflowV `shiftL` 5)
   let r'' = r' .|. fromIntegral (fromEnum spriteZeroHitV `shiftL` 6)
   let rFinal = r'' .|. fromIntegral (fromEnum nmiOccurred' `shiftL` 7)
-  storePpu nmiOccurred False
-  nmiChange
+  toggleNmi False
   storePpu writeToggle False
   pure $ fromIntegral rFinal
 
@@ -429,8 +429,10 @@ writeControl v = do
   storePpu spriteTable $ if testBit v 3 then 0x1000 else 0x0000
   storePpu bgTable $ if testBit v 4 then 0x1000 else 0x0000
   storePpu spriteSize $ if testBit v 5 then Double else Normal
-  storePpu nmiEnabled $ testBit v 7
-  nmiChange
+
+  storePpu nmiOutput $ testBit v 7
+  nmiOccurred' <- loadPpu nmiOccurred
+  toggleNmi nmiOccurred'
   tv <- loadPpu tempVramAddress
   storePpu tempVramAddress ((tv .&. 0xF3FF) .|. (toWord16 v .&. 0x03) `shiftL` 10)
 
@@ -502,7 +504,7 @@ newPPU = do
   tempVramAddress <- newIORef 0x0
   oamAddress <- newIORef 0x0
   -- NMI
-  nmiEnabled <- newIORef False
+  nmiOutput <- newIORef False
   nmiOccurred <- newIORef False
   nmiDelay <- newIORef 0
   nmiPrevious <- newIORef False
@@ -544,7 +546,7 @@ newPPU = do
     -- Addresses
     currentVramAddress tempVramAddress oamAddress
     -- NMI
-    nmiEnabled nmiOccurred nmiDelay nmiPrevious
+    nmiOutput nmiOccurred nmiDelay nmiPrevious
     -- Control register
     nameTable incrementMode spriteTable bgTable spriteSize
     -- Mask register
@@ -588,12 +590,13 @@ writeScreen (x, y) (r, g, b) = with ppu $ \ppu -> do
   VUM.write (screen ppu) (offset + 1) g
   VUM.write (screen ppu) (offset + 2) b
 
-nmiChange :: Emulator ()
-nmiChange = do
-  enabled <- loadPpu nmiEnabled
+toggleNmi :: Bool -> Emulator ()
+toggleNmi occurred = do
+  storePpu nmiOccurred occurred
+  output <- loadPpu nmiOutput
   occurred <- loadPpu nmiOccurred
   previous <- loadPpu nmiPrevious
-  let nmi = enabled && occurred
+  let nmi = output && occurred
 
   when (nmi && not previous) $
     storePpu nmiDelay 15

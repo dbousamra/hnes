@@ -29,38 +29,41 @@ tick :: Emulator Coords
 tick = do
   handleInterrupts
 
-  modifyPpu ppuCycles (+1)
+  rendering <- renderingEnabled
+  scanline' <- loadPpu scanline
   cycles <- loadPpu ppuCycles
 
-  when (cycles > 339) $ do
+  if rendering && scanline' == 261 && cycles == 339 then do
     storePpu ppuCycles 0
-    modifyPpu scanline (+1)
-    scanline' <- loadPpu scanline
+    storePpu scanline 0
+    modifyPpu frameCount (+1)
+  else do
+    modifyPpu ppuCycles (+1)
+    when (cycles + 1 > 340) $ do
+      storePpu ppuCycles 0
+      modifyPpu scanline (+1)
+      when (scanline' + 1 > 261) $ do
+        storePpu scanline 0
+        modifyPpu frameCount (+1)
 
-    when (scanline' > 261) $ do
-      storePpu scanline 0
-      modifyPpu frameCount (+1)
+  sc <- loadPpu scanline
+  cy <- loadPpu ppuCycles
 
-  scanline' <- loadPpu scanline
-  cycles' <- loadPpu ppuCycles
-  pure (scanline', cycles')
+  pure (sc, cy)
 
 handleInterrupts :: Emulator ()
 handleInterrupts = do
   delay <- loadPpu nmiDelay
   when (delay > 0) $ do
     modifyPpu nmiDelay (subtract 1)
-    enabled <- loadPpu nmiEnabled
+    output <- loadPpu nmiOutput
     occurred <- loadPpu nmiOccurred
-    delay' <- loadPpu nmiDelay
-    when (delay' == 0 && enabled && occurred) $
+    when (delay - 1 == 0 && output && occurred) $
       storeCpu interrupt (Just NMI)
 
 handleLinePhase :: Int -> Int -> Emulator ()
 handleLinePhase scanline cycle = do
-  bgVisible <- loadPpu bgVisibility
-  spritesVisible <- loadPpu spriteVisibility
-  let rendering = bgVisible || spritesVisible
+  rendering <- renderingEnabled
   let preLine = scanline == 261
   let visibleLine = scanline < 240
   let renderLine = preLine || visibleLine
@@ -331,14 +334,16 @@ isSpriteVisible row spriteSize = row >= 0 && row < h
           Double -> 16
 
 enterVBlank :: Emulator ()
-enterVBlank = do
-  storePpu nmiOccurred True
-  nmiChange
+enterVBlank = toggleNmi True
 
 exitVBlank :: Emulator ()
-exitVBlank = do
-  storePpu nmiOccurred False
-  nmiChange
+exitVBlank = toggleNmi False
+
+renderingEnabled :: Emulator Bool
+renderingEnabled = do
+  bg <- loadPpu bgVisibility
+  sprites <- loadPpu spriteVisibility
+  pure $ bg || sprites
 
 idle :: Emulator ()
 idle = pure ()
