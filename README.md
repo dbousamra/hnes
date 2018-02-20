@@ -68,6 +68,14 @@ And to run:
 - [x] Controller input handled
 - [x] Performance tuning
 
+## Tests
+
+There's a small test suite that is used to check for CPU and PPU accuracy. They use test roms rather than hand coding tests.
+
+Just run `stack test`:
+
+<img src="screenshots/tests.png" width="200" />
+
 ## Known issues.
 
 There are so many, where do I even begin.
