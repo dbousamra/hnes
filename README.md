@@ -13,8 +13,8 @@ Welcome to hnes. hnes is a NES emulator written in Haskell.
   <img src="screenshots/megaman-3.png" width="200" />
   <img src="screenshots/contra-1.png" width="200" />
   <img src="screenshots/contra-2.png" width="200" />
-  <img src="screenshots/marble-madness-1.gif" width="200" />
-  <img src="screenshots/paperboy2-1.gif" width="200" />
+  <img src="screenshots/marble-madness-2.png" width="200" />
+  <img src="screenshots/paperboy2-2.png" width="200" />
 </p>
 
 ## Controls
