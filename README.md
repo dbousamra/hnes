@@ -13,6 +13,8 @@ Welcome to hnes. hnes is a NES emulator written in Haskell.
   <img src="screenshots/megaman-3.png" width="200" />
   <img src="screenshots/contra-1.png" width="200" />
   <img src="screenshots/contra-2.png" width="200" />
+  <img src="screenshots/marble-madness-1.gif" width="200" />
+  <img src="screenshots/paperboy2-1.gif" width="200" />
 </p>
 
 ## Controls
@@ -65,3 +67,13 @@ And to run:
   - [ ] VBlank timing for Battletoads edge case
 - [x] Controller input handled
 - [x] Performance tuning
+
+## Known issues.
+
+There are so many, where do I even begin.
+
+- Performance is pretty average still. I get around 80 fps on my 2015 i5 MacBook.
+- VBlank timing is off. I don't know the exact reasons, but it causes scrolling issues.
+- Some issues around mirroring that should be investigated. When you are high up in the map in Super Mario for instance, the screen flickers weirdly:
+<img src="screenshots/mario-bug.gif" width="200" />
+
