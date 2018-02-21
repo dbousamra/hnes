@@ -17,6 +17,18 @@ Welcome to hnes. hnes is a NES emulator written in Haskell.
   <img src="screenshots/paperboy2-2.png" width="200" />
 </p>
 
+## Mapper support
+
+The following mappers are supported:
+
+- NROM (0)
+- UNROM (2)
+- AOROM (7)
+
+Lots of games run, but more don't. You can see which roms are compatible here: http://tuxnes.sourceforge.net/nesmapper.txt The best games seem to be MMC3, so that is a priority.
+
+Mappers are basically custom memory modules that exist on the cartridges themselves, that allow referencing more memory than the NES originally shipped with. Sometimes they even do computation. A very clever idea, but a nightmare to emulate, since each mapper has to be emulated as well
+
 ## Controls
 
 | Nintendo              | Emulator    |
