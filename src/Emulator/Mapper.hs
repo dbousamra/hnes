@@ -17,7 +17,6 @@ data Mapper = Mapper
 new :: Cartridge -> IO Mapper
 new cart = case mapperType cart of
   0     -> mapper2 cart
-  1     -> mapper2 cart
   2     -> mapper2 cart
   3     -> mapper3 cart
   7     -> mapper7 cart
