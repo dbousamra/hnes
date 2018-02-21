@@ -29,19 +29,32 @@ Welcome to hnes. hnes is a NES emulator written in Haskell.
 
 ## Building
 
-hnes uses stack.
+[Get Stack](https://haskell-lang.org/get-started) for building Haskell
+projects.
 
-It depends on SDL2, so make sure that's installed. To install:
+Windows instructions:
 
-- _Linux_: `apt-get install libsdl2-dev` (on Ubuntu)
-- _MacOS_: `brew install sdl2`
-- _Windows_: You are on your own.
+    $ stack exec -- pacman -Sy mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2
+    $ stack build
 
-To build hnes:
+OS X instructions:
 
-`stack build`
+    $ brew install sdl2 
+    $ stack build
 
-And to run:
+Ubuntu Linux instructions:
+
+    $ sudo apt-get install libsdl2-dev
+    $ stack build
+
+FreeBSD instructions:
+
+    $ pkg install sdl2
+    $ stack build
+
+## Running
+
+To run:
 
 `stack exec -- hnes roms/tests/cpu/nestest/nestest.nes`
 
