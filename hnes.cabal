@@ -26,11 +26,10 @@ library
                      , Emulator.Trace
                      , Emulator.Controller
   default-extensions: Strict
-  ghc-options:       -fno-warn-name-shadowing 
+  ghc-options:       -O2
+                     -fno-warn-name-shadowing
                      -fwarn-unused-imports
-                     
                     --  -fllvm
-                     -fforce-recomp
                      -funbox-strict-fields
   build-depends:       base >= 4.7 && < 5
                      , mtl
@@ -47,10 +46,8 @@ executable hnes
   main-is:             Main.hs
   default-language:    Haskell2010
   default-extensions: Strict
-  ghc-options:        
-                      
-                      -- -fllvm 
-                      -fforce-recomp
+  ghc-options:        -O2
+                      -- -fllvm
                       -funbox-strict-fields
   build-depends:       base >= 4.7 && < 5
                      , hnes
@@ -68,7 +65,7 @@ test-suite hnes-test
   other-modules:       SpecHelper
                      , Nestest.Parsing
                      , Nestest.Spec
-                     , Blargg.Spec 
+                     , Blargg.Spec
   build-depends:       base
                      , hnes
                      , bytestring
@@ -77,4 +74,3 @@ test-suite hnes-test
                      , tasty-hunit
   ghc-options:         -fforce-recomp
   default-language:    Haskell2010
-  
