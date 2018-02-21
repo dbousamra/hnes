@@ -51,7 +51,7 @@ Windows instructions:
 
 OS X instructions:
 
-    $ brew install sdl2 
+    $ brew install sdl2
     $ stack build
 
 Ubuntu Linux instructions:
@@ -76,9 +76,12 @@ To run:
 - [ ] Mappers
   - [x] Loading roms
   - [x] Mappers
-    - [x] Mapper 2
-    - [x] Mapper 3
-    - [x] Mapper 7
+    - [x] UNROM
+    - [x] NROM
+    - [x] AOROM
+    - [ ] CNROM
+    - [ ] MMC1
+    - [ ] MMC3
 - [ ] CPU
   - [x] All official opcodes
   - [ ] All illegal opcodes
@@ -90,8 +93,13 @@ To run:
   - [x] Scrolling
   - [x] Sprite rendering
   - [ ] VBlank timing for Battletoads edge case
+- [ ] APU
 - [x] Controller input handled
 - [x] Performance tuning
+- [ ] Command line interface
+  - [ ] Parse args
+  - [ ] Use optparse-applicative
+  - [ ] Some debug params?
 
 ## Tests
 
