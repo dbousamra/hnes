@@ -157,7 +157,8 @@ getComposedColor (x, y) bg sprite = do
       | not b && s = pure $ sc .|. 0x10
       | b && not s = pure bg
       | otherwise = do
-        storePpu spriteZeroHit (ind == 0 && x < 255)
+        when (ind == 0 && x < 255) $
+          storePpu spriteZeroHit True
         if priority == 0 then
           pure $ sc .|. 0x10
         else
