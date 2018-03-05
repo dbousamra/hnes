@@ -115,6 +115,3 @@ There are so many, where do I even begin.
 
 - Performance is pretty average still. I get around 80 fps on my 2015 i5 MacBook.
 - VBlank timing is off. I don't know the exact reasons, but it causes scrolling issues.
-- Some issues around mirroring that should be investigated. When you are high up in the map in Super Mario for instance, the screen flickers weirdly:
-<img src="screenshots/mario-bug.gif" width="200" />
-
