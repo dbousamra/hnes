@@ -9,10 +9,12 @@ import           Control.Monad.Loops
 import qualified Emulator.CPU        as CPU
 import           Emulator.Nes
 import qualified Emulator.PPU        as PPU
+import           Emulator.Trace      (renderTrace)
 
 step :: Emulator ()
 step = do
-  cycles' <- CPU.step
+  (cycles', t) <- CPU.stepT
+  -- debug $ renderTrace t
   replicateM_ (cycles' * 3) PPU.step
 
 stepFrame :: Emulator ()

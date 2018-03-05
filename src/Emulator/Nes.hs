@@ -291,7 +291,8 @@ writeCPURam addr v = with cpu $ \cpu ->
   VUM.write (ram cpu) (fromIntegral addr `rem` 0x0800) v
 
 readMapper :: Word16 -> Emulator Word8
-readMapper addr = with mapper $ \mapper ->
+readMapper addr = with mapper $ \mapper -> do
+  putStrLn $ "Read address: " ++ show addr
   Mapper.read mapper addr
 
 writeMapper :: Word16 -> Word8 -> Emulator ()

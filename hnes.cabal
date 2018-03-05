@@ -18,6 +18,7 @@ library
                      , Emulator.CPU
                      , Emulator.Cartridge
                      , Emulator.Mapper
+                     , Emulator.Mapper.Mapper1
                      , Emulator.Mapper.Mapper2
                      , Emulator.Mapper.Mapper3
                      , Emulator.Mapper.Mapper7
