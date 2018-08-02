@@ -5,6 +5,7 @@ module Emulator.Opcode (
   , decodeOpcode
 ) where
 
+import           Data.List              (intersperse)
 import           Data.Word
 import           Emulator.Util
 
@@ -54,13 +55,10 @@ data Opcode = Opcode {
 
 instance Show Opcode where
   show (Opcode raw mn mode len cyc pageCrossCy) =
-    "Opcode: "
-      ++ prettifyWord8 raw ++ " "
-      ++ show mn ++ " "
-      ++ show mode ++ " "
-      ++ show len ++ " "
-      ++ show cyc ++ " "
-      ++ show pageCrossCy
+    intersperse ' '
+      $ "Opcode:" : prettifyWord8 raw
+      : show mn : show mode
+      : map show [len, cyc, pageCrossCy]
 
 -- see http://e-tradition.net/bytes/6502/6502_instruction_set.html
 decodeOpcode :: Word8 -> Opcode
