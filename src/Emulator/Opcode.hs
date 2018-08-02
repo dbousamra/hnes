@@ -55,7 +55,7 @@ data Opcode = Opcode {
 
 instance Show Opcode where
   show (Opcode raw mn mode len cyc pageCrossCy) =
-    intersperse ' '
+    intersperse " "
       $ "Opcode:" : prettifyWord8 raw
       : show mn : show mode
       : map show [len, cyc, pageCrossCy]
