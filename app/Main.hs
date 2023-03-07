@@ -4,7 +4,7 @@ module Main where
 
 import           Control.Monad
 import qualified Data.ByteString     as BS
-import           Data.Maybe          (catMaybes)
+import           Data.Maybe          (mapMaybe)
 import           Data.Set            as Set hiding (foldl)
 import qualified Data.Text           as T
 import           Emulator            (reset, stepFrame)
@@ -65,7 +65,7 @@ render renderer = do
   pure texture
 
 eventsToIntents :: [SDL.Event] -> Set Intent
-eventsToIntents events = Set.fromList $ catMaybes $ eventToIntent . SDL.eventPayload <$> events
+eventsToIntents events = Set.fromList $ mapMaybe (eventToIntent . SDL.eventPayload) events
   where
     eventToIntent :: SDL.EventPayload -> Maybe Intent
     eventToIntent SDL.QuitEvent = Just Exit
