@@ -21,7 +21,7 @@ data Mapper7 = Mapper7
   }
 
 new :: Cartridge -> IO Mapper7
-new cart @ Cartridge{..} = do
+new cart@Cartridge{..} = do
   prgBank <- newIORef 0
   pure $ Mapper7 cart prgBank
 

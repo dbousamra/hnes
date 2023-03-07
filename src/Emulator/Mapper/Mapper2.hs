@@ -22,7 +22,7 @@ data Mapper2 = Mapper2
   }
 
 new :: Cartridge -> IO Mapper2
-new cart @ Cartridge{..} = do
+new cart@Cartridge{..} = do
   let prgBanks = VUM.length (Cartridge.prgRom cart) `div` 0x4000
   prgBank1 <- newIORef 0
   prgBank2 <- newIORef $ prgBanks - 1
