@@ -33,7 +33,7 @@ parseTrace = do
   _ <- space
   cyc <- string "CYC:" >> cyclesP
   _ <- space
-  _ <- string "SL:" >> (many $ noneOf "\n")
+  _ <- string "SL:" >> many (noneOf "\n")
   let opcode = decodeOpcode a0r
   pure $ Trace pcv spv av xv yv pv opcode a0r a1r a2r cyc
 
