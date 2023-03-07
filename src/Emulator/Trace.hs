@@ -7,7 +7,7 @@ module Emulator.Trace (
 ) where
 
 import           Data.Word
-import           Emulator.Nes
+import qualified Emulator.Nes    as NES
 import           Emulator.Opcode
 import           Text.Printf
 
@@ -28,18 +28,18 @@ data Trace = Trace {
 instance Show Trace where
   show = renderTrace
 
-mkTrace :: Opcode -> Emulator Trace
+mkTrace :: Opcode -> NES.Emulator Trace
 mkTrace op = do
-  pcv <- loadCpu pc
-  a0 <- readCpuMemory8 pcv
-  a1 <- readCpuMemory8 (pcv + 1)
-  a2 <- readCpuMemory8 (pcv + 2)
-  spv <- loadCpu sp
-  av  <- loadCpu a
-  xv  <- loadCpu x
-  yv  <- loadCpu y
-  pv  <- loadCpu p
-  cycles <- loadCpu cpuCycles
+  pcv <- NES.loadCpu NES.pc
+  a0 <- NES.readCpuMemory8 pcv
+  a1 <- NES.readCpuMemory8 (pcv + 1)
+  a2 <- NES.readCpuMemory8 (pcv + 2)
+  spv <- NES.loadCpu NES.sp
+  av  <- NES.loadCpu NES.a
+  xv  <- NES.loadCpu NES.x
+  yv  <- NES.loadCpu NES.y
+  pv  <- NES.loadCpu NES.p
+  cycles <- NES.loadCpu NES.cpuCycles
   let instrLength = len op
   let a1R = if instrLength < 2 then 0x0 else a1
   let a2R = if instrLength < 3 then 0x0 else a2
