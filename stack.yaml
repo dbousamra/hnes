@@ -32,6 +32,8 @@ extra-deps:
 - monad-loops-0.4.3
 - sdl2-2.5.4.0
 - vector-0.12.3.1
+- tasty-1.4.3
+- tasty-hunit-0.10.0.3
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
